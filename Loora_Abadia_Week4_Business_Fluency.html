@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S&R Spain · Loora Weekly Challenge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { min-height: 100%; background: #E8E2D4; }
+  body { font-family: 'Instrument Sans', system-ui, sans-serif; color: #17130E; padding: 40px 20px; }
+  .wrap { max-width: 660px; margin: 0 auto; background: #FFFDF9; border-radius: 26px; overflow: hidden; box-shadow: 0 30px 60px -30px rgba(23,19,14,.45); border: 1px solid #EFE8D9; }
+  .header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 30px; border-bottom: 1px solid #EFE8D9; }
+  .brand { display: flex; align-items: baseline; gap: 8px; }
+  .brand-sr { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 20px; color: #17130E; }
+  .brand-sub { font-weight: 500; font-size: 20px; color: #8B8073; }
+  .toggle { display: inline-flex; padding: 3px; background: #F2ECDE; border-radius: 999px; gap: 2px; }
+  .toggle button { border: none; cursor: pointer; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; letter-spacing: .04em; padding: 6px 14px; border-radius: 999px; transition: all .15s ease; }
+  .btn-active { background: #17130E !important; color: #FFFDF9 !important; }
+  .btn-idle { background: transparent !important; color: #8B8073 !important; }
+  .hero { background: #17130E; color: #F6F1E7; padding: 44px 30px 40px; position: relative; overflow: hidden; }
+  .hero-deco { position: absolute; top: -20px; right: -10px; font-size: 140px; line-height: 1; color: rgba(255,74,28,.08); pointer-events: none; user-select: none; }
+  .hero-eyebrow { text-transform: uppercase; letter-spacing: .18em; font-size: 12px; font-weight: 600; color: #FF6A42; position: relative; }
+  .hero h1 { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 42px; line-height: 1.05; letter-spacing: -.02em; margin: 14px 0 16px; max-width: 16ch; position: relative; }
+  .hero-body { font-size: 16px; line-height: 1.65; color: #CFC7B8; max-width: 52ch; position: relative; }
+  .hero-body strong { color: #F6F1E7; }
+  .reminders { padding: 24px 30px; border-bottom: 1px solid #EFE8D9; }
+  .section-label { text-transform: uppercase; letter-spacing: .14em; font-size: 11px; font-weight: 700; color: #B0392A; margin-bottom: 14px; }
+  .tip { display: flex; align-items: flex-start; gap: 10px; font-size: 15px; line-height: 1.5; color: #3A332A; margin-bottom: 10px; }
+  .tip:last-child { margin-bottom: 0; }
+  .dot { color: #FF4A1C; font-size: 12px; line-height: 1.6; flex-shrink: 0; }
+  .level-beginner { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #E8F5E9; color: #2E7D32; border: 1px solid #C8E6C9; }
+  .level-intermediate { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #FFF3E0; color: #E65100; border: 1px solid #FFE0B2; }
+  .level-advanced { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #FCE4EC; color: #C62828; border: 1px solid #F8BBD0; }
+  .section-block { padding: 28px 30px 8px; }
+  .section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding: 14px 18px; border-radius: 14px; }
+  .section-header-business { background: #17130E; color: #F6F1E7; }
+  .section-header-fluency { background: #FFF3E0; color: #17130E; border: 1px solid #FFE0B2; }
+  .section-icon { font-size: 26px; line-height: 1; }
+  .section-title-block { display: flex; flex-direction: column; gap: 3px; }
+  .section-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px; line-height: 1.2; }
+  .section-subtitle { font-size: 13px; opacity: .7; }
+  .card { border: 1px solid #EDE5D5; border-radius: 18px; padding: 20px 20px 18px; background: #fff; margin-bottom: 16px; }
+  .card-top { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 6px; }
+  .card-num { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 34px; border-radius: 9px; background: #17130E; color: #FFFDF9; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+  .card-num-orange { background: #FF4A1C; }
+  .card-emoji { font-size: 22px; line-height: 1.5; flex-shrink: 0; }
+  .card-right { display: flex; flex-direction: column; gap: 6px; padding-top: 3px; }
+  .card-title { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 17px; line-height: 1.3; color: #17130E; }
+  .card-expression { font-size: 13px; color: #8B8073; font-style: italic; margin-bottom: 10px; }
+  .script-box { background: #FBF5EB; border: 1px solid #F1E7D6; border-left: 3px solid #FF4A1C; border-radius: 11px; padding: 13px 15px; margin-top: 12px; }
+  .script-label { text-transform: uppercase; letter-spacing: .12em; font-size: 10px; font-weight: 700; color: #C13D28; margin-bottom: 8px; }
+  .script-text { font-size: 14.5px; line-height: 1.6; color: #2E2820; font-style: italic; }
+  .script-box-fluency { background: #FFF8F0; border: 1px solid #FFE0B2; border-left: 3px solid #FF8C00; }
+  .script-label-fluency { color: #E65100; }
+  .divider { height: 1px; background: #EFE8D9; margin: 8px 30px 0; }
+  .closing-banner { margin: 22px 30px 28px; background: #17130E; color: #F6F1E7; border-radius: 18px; padding: 24px 22px; text-align: center; }
+  .closing-pool { font-size: 30px; margin-bottom: 10px; }
+  .closing-msg { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 18px; line-height: 1.4; max-width: 34ch; margin: 0 auto; }
+  .closing-sub { font-size: 14px; color: #CFC7B8; margin-top: 8px; }
+  .footer { padding: 18px 30px 24px; border-top: 1px solid #EFE8D9; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .footer-note { font-size: 13px; color: #8B8073; }
+  .footer-brand { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; color: #17130E; }
+  @media (max-width: 500px) {
+    body { padding: 16px 10px; }
+    .hero h1 { font-size: 30px; }
+    .header, .reminders, .section-block, .footer { padding-left: 18px; padding-right: 18px; }
+    .closing-banner { margin-left: 18px; margin-right: 18px; }
+    .divider { margin-left: 18px; margin-right: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="brand"><span class="brand-sr">S&amp;R</span><span class="brand-sub">Spain</span></div>
+    <div class="toggle">
+      <button id="btn-en" class="btn-active" onclick="setLang('en')">EN</button>
+      <button id="btn-es" class="btn-idle" onclick="setLang('es')">ES</button>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="hero-deco">🏊</div>
+    <div class="hero-eyebrow" id="eyebrow">Loora · Weekly Challenge · 18–21 Aug</div>
+    <h1 id="hero-title">Stillness, Sunshine & Serious English.</h1>
+    <p class="hero-body" id="hero-body"><strong>Hi everyone!</strong> While summer slows down by the pool, your English doesn't have to. This week — fresh business expressions across all levels, plus a fluency section to keep you sharp. Two sections. Let's go. 🏊💼</p>
+  </div>
+
+  <div class="reminders">
+    <div class="section-label" id="rem-label">Remember</div>
+    <div id="rem-list"></div>
+  </div>
+
+  <!-- SECTION 1: BUSINESS EXPRESSIONS -->
+  <div class="section-block">
+    <div class="section-header section-header-business">
+      <span class="section-icon">💼</span>
+      <div class="section-title-block">
+        <span class="section-title" id="s1-title">Business Expressions</span>
+        <span class="section-subtitle" id="s1-sub">Beginner · Intermediate · Advanced</span>
+      </div>
+    </div>
+    <div id="business-list"></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- SECTION 2: FLUENCY -->
+  <div class="section-block" style="padding-top: 28px;">
+    <div class="section-header section-header-fluency">
+      <span class="section-icon">🗣️</span>
+      <div class="section-title-block">
+        <span class="section-title" id="s2-title" style="color:#17130E;">Fluency Challenge</span>
+        <span class="section-subtitle" id="s2-sub" style="color:#8B8073;">Keep it flowing. Keep it natural.</span>
+      </div>
+    </div>
+    <div id="fluency-list"></div>
+  </div>
+
+  <div class="closing-banner">
+    <div class="closing-pool">🏊</div>
+    <div class="closing-msg" id="closing">The pool can wait. Your English can't.</div>
+    <div class="closing-sub" id="closing-sub">Surrounded by vineyards, stillness and nature — speak English.</div>
+  </div>
+
+  <div class="footer">
+    <span class="footer-note" id="footer-note">S&amp;R Spain · Loora Weekly Challenge · 18–21 Aug</span>
+    <span class="footer-brand">Abadía Retuerta</span>
+  </div>
+</div>
+
+<script>
+const BUSINESS_SCRIPTS = [
+  'I want to practice the expression TO BE ON THE BALL in English. Act as my manager at Abadía Retuerta. Ask me questions about whether I am always on the ball at work — in meetings, with guests, during busy shifts. Use the expression naturally and correct me gently if I make a mistake. Speak clearly and at a comfortable pace.',
+  'I want to practice the expression TO BE A PIECE OF CAKE in English. Act as a new colleague at the hotel. Ask me questions about which parts of my job I find easy — a piece of cake — and which parts I find more difficult. Use the expression naturally in your questions and correct me if I make a grammar mistake.',
+  'I want to practice the expression TO CLEAR UP in English. Act as a guest at Abadía Retuerta who has a small misunderstanding or question about their booking, the restaurant, or the facilities. I work at the hotel and I will try to clear up the confusion professionally. After the conversation, tell me what I did well.',
+  'I want to practice the expression TO FROWN ON in English. Act as my colleague at a luxury hotel. Ask me questions about things that are frowned on in our workplace — with guests, in the team, and in professional situations. Push me to give detailed answers and use the expression naturally. Correct my English throughout.',
+  'I want to practice the expression TO MESS UP in English. Act as my manager at Abadía Retuerta. Ask me about situations at work where things have been messed up — by me, by a colleague, or by a supplier. Ask me how I handled it and what I learned. Push me to speak in full sentences and correct my English.',
+  'I want to practice the expression TO MAKE UP in English — meaning to invent an excuse or to reconcile with someone. Act as my colleague. Ask me about times at work when someone has made up an excuse, or when colleagues have fallen out and had to make up. Use the expression in both meanings and correct my grammar throughout.',
+  'I want to practice the expression TO START FROM SCRATCH in English. Act as a business consultant visiting Abadía Retuerta. Ask me questions about situations where we have had to start something from scratch — a new project, a new process, a new team approach. Push me to be specific and use sophisticated vocabulary. Correct my English and give me feedback at the end.',
+  'I want to practice the expression TO BARGE IN ON in English. Act as my colleague at a luxury hotel. Ask me questions about situations where someone has barged in on a meeting, a guest conversation, or an important moment. Ask me how I handled it and what I would do differently. Correct my English throughout and push me to sound professional.',
+  'I want to practice the expression ONCE IN A BLUE MOON in English. Act as my manager in a performance review at Abadía Retuerta. Ask me questions about things that only happen once in a blue moon at the hotel — rare guest requests, unusual situations, special events. Push me to use the expression naturally and give me feedback on my fluency at the end.'
+];
+
+const FLUENCY_SCRIPTS = [
+  'I want to practice sounding natural in English when I hesitate. Have a relaxed conversation with me about summer at Abadía Retuerta — the pool, the vineyards, the guests, the atmosphere. Every time I pause for more than three seconds, remind me to use a filler like: well, let me think, actually, you know, or to be honest. Keep it going for at least five minutes.',
+  'I want to practice speaking faster and more fluently in English. Ask me questions about my daily routine during the summer season at the hotel — one question at a time. After each answer, ask me to repeat it faster and more confidently. Push me to keep going without stopping.',
+  'I want to practice using linking words and connectors in English. Have a conversation with me about work at Abadía Retuerta this week. Every time I give a short answer, push me to expand it using: however, although, on the other hand, as a result, therefore, in addition, and despite. Correct me if I use them incorrectly.',
+  'I want to do the ultimate fluency challenge. Have a natural conversation with me about summer at Abadía Retuerta for ten minutes. Every time I hesitate too long, remind me to use a filler. Every time I give a short answer, push me to use a connector. Every time I speak too slowly, encourage me to speed up. At the end, give me a fluency score out of ten and three things to work on.'
+];
+
+const DATA = {
+  en: {
+    eyebrow: 'Loora · Weekly Challenge · 18–21 Aug',
+    title: 'Stillness, Sunshine & Serious English.',
+    body: '<strong>Hi everyone!</strong> While summer slows down by the pool, your English doesn\'t have to. This week — fresh business expressions across all levels, plus a fluency section to keep you sharp. Two sections. Let\'s go. 🏊💼',
+    remLabel: 'Remember',
+    reminders: ['Tell Loora exactly what\'s written below — out loud!', 'Speak in full sentences.', 'Find your level — or challenge yourself with the next one up. 😎'],
+    s1Title: 'Business Expressions',
+    s1Sub: 'Beginner · Intermediate · Advanced',
+    s2Title: 'Fluency Challenge',
+    s2Sub: 'Keep it flowing. Keep it natural.',
+    sayLabel: 'Tell Loora',
+    closing: 'The pool can wait. Your English can\'t.',
+    closingSub: 'Surrounded by vineyards, stillness and nature — speak English.',
+    footerNote: 'S&R Spain · Loora Weekly Challenge · 18–21 Aug',
+    business: [
+      { emoji: '🎯', title: 'Always On the Ball', expression: 'to be on the ball', level: 'beginner' },
+      { emoji: '🍰', title: 'A Piece of Cake at Work', expression: 'to be a piece of cake', level: 'beginner' },
+      { emoji: '✅', title: 'Clearing Up Confusion', expression: 'to clear up', level: 'beginner' },
+      { emoji: '🙁', title: 'What\'s Frowned On Here?', expression: 'to frown on', level: 'intermediate' },
+      { emoji: '😬', title: 'When Things Get Messed Up', expression: 'to mess up', level: 'intermediate' },
+      { emoji: '🤝', title: 'Making Up and Making Excuses', expression: 'to make up', level: 'intermediate' },
+      { emoji: '🔨', title: 'Starting From Scratch', expression: 'to start from scratch', level: 'advanced' },
+      { emoji: '🚪', title: 'Barging In at the Wrong Moment', expression: 'to barge in on', level: 'advanced' },
+      { emoji: '🌕', title: 'Once in a Blue Moon', expression: 'once in a blue moon', level: 'advanced' }
+    ],
+    fluency: [
+      { emoji: '🎯', title: 'Hesitation Fillers — Sound Natural!' },
+      { emoji: '⚡', title: 'Speed & Rhythm — Train Your Mouth!' },
+      { emoji: '🔗', title: 'Connectors — Stop Sounding Like a Robot!' },
+      { emoji: '🌀', title: 'The Ultimate Fluency Test' }
+    ]
+  },
+  es: {
+    eyebrow: 'Loora · Reto Semanal · 18–21 Ago',
+    title: 'Calma, Sol e Inglés en Serio.',
+    body: '<strong>¡Hola a todos!</strong> Mientras el verano se ralentiza junto a la piscina, vuestro inglés no tiene por qué hacerlo. Esta semana — expresiones de negocios frescas para todos los niveles, más una sección de fluidez para manteneros afilados. Dos secciones. ¡Vamos! 🏊💼',
+    remLabel: 'Recordad',
+    reminders: ['¡Decidle a Loora exactamente lo que pone abajo — en voz alta!', 'Hablad en frases completas.', 'Encontrad vuestro nivel — o retaos con el siguiente. 😎'],
+    s1Title: 'Expresiones de Negocios',
+    s1Sub: 'Principiante · Intermedio · Avanzado',
+    s2Title: 'Reto de Fluidez',
+    s2Sub: 'Que fluya. Que sea natural.',
+    sayLabel: 'Dile a Loora 🇬🇧',
+    closing: 'La piscina puede esperar. Tu inglés, no.',
+    closingSub: 'Rodeados de viñedos, silencio y naturaleza — habla inglés.',
+    footerNote: 'S&R Spain · Reto Semanal de Loora · 18–21 Ago',
+    business: [
+      { emoji: '🎯', title: 'Siempre Alerta (On the Ball)', expression: 'to be on the ball', level: 'beginner' },
+      { emoji: '🍰', title: 'Pan Comido en el Trabajo (Piece of Cake)', expression: 'to be a piece of cake', level: 'beginner' },
+      { emoji: '✅', title: 'Aclarar Malentendidos (Clear Up)', expression: 'to clear up', level: 'beginner' },
+      { emoji: '🙁', title: '¿Qué Está Mal Visto Aquí? (Frown On)', expression: 'to frown on', level: 'intermediate' },
+      { emoji: '😬', title: 'Cuando las Cosas Salen Mal (Mess Up)', expression: 'to mess up', level: 'intermediate' },
+      { emoji: '🤝', title: 'Inventarse Excusas y Reconciliarse (Make Up)', expression: 'to make up', level: 'intermediate' },
+      { emoji: '🔨', title: 'Empezar de Cero (Start From Scratch)', expression: 'to start from scratch', level: 'advanced' },
+      { emoji: '🚪', title: 'Interrumpir en el Momento Equivocado (Barge In)', expression: 'to barge in on', level: 'advanced' },
+      { emoji: '🌕', title: 'De Pascuas a Ramos (Once in a Blue Moon)', expression: 'once in a blue moon', level: 'advanced' }
+    ],
+    fluency: [
+      { emoji: '🎯', title: 'Muletillas — ¡Suena Natural!' },
+      { emoji: '⚡', title: 'Velocidad y Ritmo — ¡Entrena tu Boca!' },
+      { emoji: '🔗', title: 'Conectores — ¡Deja de Sonar Como un Robot!' },
+      { emoji: '🌀', title: 'El Test de Fluidez Definitivo' }
+    ]
+  }
+};
+
+const LEVEL_LABELS = {
+  en: { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced' },
+  es: { beginner: 'Principiante', intermediate: 'Intermedio', advanced: 'Avanzado' }
+};
+
+const FLUENCY_SCRIPTS_ES_TITLES = DATA.es.fluency;
+
+function render(lang) {
+  const d = DATA[lang];
+  document.getElementById('eyebrow').textContent = d.eyebrow;
+  document.getElementById('hero-title').textContent = d.title;
+  document.getElementById('hero-body').innerHTML = d.body;
+  document.getElementById('rem-label').textContent = d.remLabel;
+  document.getElementById('s1-title').textContent = d.s1Title;
+  document.getElementById('s1-sub').textContent = d.s1Sub;
+  document.getElementById('s2-title').textContent = d.s2Title;
+  document.getElementById('s2-sub').textContent = d.s2Sub;
+  document.getElementById('closing').textContent = d.closing;
+  document.getElementById('closing-sub').textContent = d.closingSub;
+  document.getElementById('footer-note').textContent = d.footerNote;
+
+  document.getElementById('rem-list').innerHTML = d.reminders.map(r =>
+    `<div class="tip"><span class="dot">◆</span><span>${r}</span></div>`
+  ).join('');
+
+  document.getElementById('business-list').innerHTML = d.business.map((c, i) => `
+    <div class="card">
+      <div class="card-top">
+        <span class="card-num">${String(i+1).padStart(2,'0')}</span>
+        <span class="card-emoji">${c.emoji}</span>
+        <div class="card-right">
+          <span class="level-${c.level}">${LEVEL_LABELS[lang][c.level]}</span>
+          <span class="card-title">${c.title}</span>
+        </div>
+      </div>
+      <div class="card-expression">Expression: <em>${c.expression}</em></div>
+      <div class="script-box">
+        <div class="script-label">${d.sayLabel}</div>
+        <div class="script-text">"${BUSINESS_SCRIPTS[i]}"</div>
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('fluency-list').innerHTML = d.fluency.map((c, i) => `
+    <div class="card">
+      <div class="card-top">
+        <span class="card-num card-num-orange">${String(i+1).padStart(2,'0')}</span>
+        <span class="card-emoji">${c.emoji}</span>
+        <span class="card-title">${c.title}</span>
+      </div>
+      <div class="script-box script-box-fluency">
+        <div class="script-label script-label-fluency">${d.sayLabel}</div>
+        <div class="script-text">"${FLUENCY_SCRIPTS[i]}"</div>
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('btn-en').className = lang === 'en' ? 'btn-active' : 'btn-idle';
+  document.getElementById('btn-es').className = lang === 'es' ? 'btn-active' : 'btn-idle';
+}
+
+function setLang(lang) { render(lang); }
+render('en');
+</script>
+</body>
+</html>
