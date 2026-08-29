@@ -340,7 +340,6 @@ def generate_report(client: anthropic.Anthropic, transcript: list[dict]) -> dict
         messages=report_request,
         tools=[REPORT_TOOL],
         tool_choice={"type": "tool", "name": "submit_session_report"},
-        output_config={"effort": "high"},
     )
     tool_use = next(b for b in response.content if b.type == "tool_use")
     return tool_use.input
@@ -418,7 +417,6 @@ def run_call(client: anthropic.Anthropic, level: str, mode: str, scenario: dict 
         max_tokens=1024,
         system=system_prompt,
         messages=[{"role": "user", "content": "(the call has just connected — open it)"}],
-        output_config={"effort": "medium"},
     )
     opening_text = next(b.text for b in opening.content if b.type == "text")
     print(f"Juno: {opening_text}\n")
@@ -443,7 +441,6 @@ def run_call(client: anthropic.Anthropic, level: str, mode: str, scenario: dict 
             max_tokens=1024,
             system=system_prompt,
             messages=messages,
-            output_config={"effort": "medium"},
         )
         reply = next(b.text for b in response.content if b.type == "text")
         print(f"Juno: {reply}\n")
