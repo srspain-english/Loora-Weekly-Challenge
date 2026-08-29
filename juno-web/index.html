@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Juno — S&amp;R English Tutor</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Instrument+Sans:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#FFFDF9; --bg-sunk:#F3EEE1; --card:#FFFFFF;
+    --ink:#17130E; --ink-soft:#3A332A; --muted:#8B8073;
+    --line:#E8E0CE; --accent:#FF4A1C; --accent-tint:#FFF1E8;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink-soft);
+    font-family:'Instrument Sans',system-ui,sans-serif;
+  }
+  h1,h2,.display{font-family:'Space Grotesk',sans-serif;color:var(--ink)}
+  .wrap{max-width:640px;margin:0 auto;padding:28px 18px 60px}
+
+  .brand{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+  .brand-mark{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px}
+  .brand-sub{color:var(--muted);font-size:13px}
+  .lede{color:var(--muted);font-size:14px;margin:0 0 26px}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}
+
+  label{display:block;font-size:12.5px;color:var(--muted);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em}
+  label:first-child{margin-top:0}
+  input[type=password], select{
+    width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;
+    font-family:inherit;font-size:14px;background:var(--bg);color:var(--ink);
+  }
+  button{
+    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14px;cursor:pointer;
+    border:none;border-radius:999px;padding:11px 20px;background:var(--accent);color:#fff;
+  }
+  button:disabled{opacity:.5;cursor:default}
+  button.ghost{background:transparent;color:var(--ink-soft);border:1px solid var(--line)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .error{color:#B0392A;font-size:13px;margin-top:10px}
+
+  #chat-screen{display:none}
+  #report-screen{display:none}
+
+  .chat-log{
+    height:420px;overflow-y:auto;border:1px solid var(--line);border-radius:14px;
+    padding:16px;background:var(--bg-sunk);display:flex;flex-direction:column;gap:10px;
+  }
+  .bubble{max-width:82%;padding:10px 14px;border-radius:14px;font-size:14.5px;line-height:1.5}
+  .bubble.juno{background:var(--card);border:1px solid var(--line);align-self:flex-start}
+  .bubble.you{background:var(--ink);color:#F6F1E7;align-self:flex-end}
+  .bubble .who{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;opacity:.6;margin-bottom:3px}
+
+  .composer{display:flex;gap:8px;margin-top:12px}
+  .composer input[type=text]{
+    flex:1;padding:11px 14px;border:1px solid var(--line);border-radius:999px;
+    font-family:inherit;font-size:14.5px;background:var(--bg);color:var(--ink);
+  }
+
+  .recap h3{font-family:'Space Grotesk',sans-serif;font-size:14px;margin:20px 0 8px;color:var(--ink)}
+  .recap h3:first-child{margin-top:0}
+  .recap table{width:100%;border-collapse:collapse;font-size:13.5px}
+  .recap td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+  .recap ul{margin:4px 0;padding-left:20px;font-size:13.8px}
+  .tag{font-size:10px;text-transform:uppercase;color:var(--muted);font-family:ui-monospace,monospace}
+
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#161310; --bg-sunk:#1E1A15; --card:#211D18;
+      --ink:#F5EFE3; --ink-soft:#DCD3C2; --muted:#9C917F;
+      --line:#332C23; --accent:#FF6A42; --accent-tint:#2E1E17;
+    }
+    .bubble.you{color:#17130E}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><span class="brand-mark">Juno</span><span class="brand-sub">S&amp;R English Tutor</span></div>
+  <p class="lede">A live practice call, corrected as you go. This is a demo page — no login, no memory between calls yet.</p>
+
+  <div id="auth-screen" class="panel">
+    <label for="passphrase">Access code</label>
+    <input type="password" id="passphrase" placeholder="Ask your teacher for the code">
+    <div class="row" style="margin-top:16px">
+      <button id="auth-btn">Enter</button>
+    </div>
+    <div class="error" id="auth-error"></div>
+  </div>
+
+  <div id="setup-screen" class="panel" style="display:none">
+    <label for="mode">Mode</label>
+    <select id="mode">
+      <option value="free">Free Conversation</option>
+      <option value="business">Business English — Abadía Retuerta</option>
+    </select>
+
+    <label for="level">Your level</label>
+    <select id="level">
+      <option value="A2">A2</option>
+      <option value="B1" selected>B1</option>
+      <option value="B2">B2</option>
+      <option value="C1">C1</option>
+    </select>
+
+    <div id="scenario-row" style="display:none">
+      <label for="scenario">Scenario</label>
+      <select id="scenario"></select>
+    </div>
+
+    <div class="row" style="margin-top:18px">
+      <button id="start-btn">Start call</button>
+    </div>
+    <div class="error" id="start-error"></div>
+  </div>
+
+  <div id="chat-screen" class="panel">
+    <div class="chat-log" id="chat-log"></div>
+    <div class="composer">
+      <input type="text" id="msg-input" placeholder="Type your reply…">
+      <button id="send-btn">Send</button>
+    </div>
+    <div class="row" style="margin-top:12px;justify-content:flex-end">
+      <button class="ghost" id="end-btn">End call</button>
+    </div>
+    <div class="error" id="chat-error"></div>
+  </div>
+
+  <div id="report-screen" class="panel">
+    <h2 style="margin-top:0">Class recap</h2>
+    <div id="recap" class="recap"></div>
+    <div class="row" style="margin-top:20px">
+      <button id="again-btn">New call</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let scenarios = null;
+
+async function api(action, extra) {
+  const res = await fetch('api/juno.php', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action, ...extra }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+  return data;
+}
+
+function show(id) {
+  ['auth-screen', 'setup-screen', 'chat-screen', 'report-screen'].forEach(
+    (s) => ($(s).style.display = s === id ? 'block' : 'none')
+  );
+}
+
+function bubble(who, text) {
+  const el = document.createElement('div');
+  el.className = 'bubble ' + (who === 'juno' ? 'juno' : 'you');
+  el.innerHTML = `<span class="who">${who === 'juno' ? 'Juno' : 'You'}</span>${text.replace(/</g, '&lt;')}`;
+  const log = $('chat-log');
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+}
+
+$('auth-btn').onclick = async () => {
+  $('auth-error').textContent = '';
+  try {
+    await api('auth', { passphrase: $('passphrase').value });
+    scenarios = await (await fetch('scenarios.json')).json();
+    const sel = $('scenario');
+    scenarios.business.forEach((s) => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = `${s.title} (${s.cefr})`;
+      sel.appendChild(opt);
+    });
+    show('setup-screen');
+  } catch (e) {
+    $('auth-error').textContent = e.message;
+  }
+};
+
+$('mode').onchange = () => {
+  $('scenario-row').style.display = $('mode').value === 'business' ? 'block' : 'none';
+};
+
+$('start-btn').onclick = async () => {
+  $('start-error').textContent = '';
+  $('start-btn').disabled = true;
+  try {
+    const mode = $('mode').value;
+    const data = await api('start', {
+      mode,
+      level: $('level').value,
+      scenario_id: mode === 'business' ? $('scenario').value : null,
+    });
+    $('chat-log').innerHTML = '';
+    bubble('juno', data.reply);
+    show('chat-screen');
+  } catch (e) {
+    $('start-error').textContent = e.message;
+  } finally {
+    $('start-btn').disabled = false;
+  }
+};
+
+async function sendMessage() {
+  const input = $('msg-input');
+  const text = input.value.trim();
+  if (!text) return;
+  bubble('you', text);
+  input.value = '';
+  $('send-btn').disabled = true;
+  $('chat-error').textContent = '';
+  try {
+    const data = await api('message', { text });
+    bubble('juno', data.reply);
+  } catch (e) {
+    $('chat-error').textContent = e.message;
+  } finally {
+    $('send-btn').disabled = false;
+    input.focus();
+  }
+}
+$('send-btn').onclick = sendMessage;
+$('msg-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+
+function renderRecap(r) {
+  const el = $('recap');
+  const rows = (arr, fn) => arr.map(fn).join('');
+  el.innerHTML = `
+    <h3>What we did today</h3><p>${r.what_we_did}</p>
+    <h3>Your corrections</h3>
+    <table>${rows(r.corrections, (c) => `<tr><td class="tag">${c.tier}</td><td><b>${c.said}</b> → <b>${c.better}</b><br><span style="color:var(--muted)">${c.note}</span></td></tr>`)}</table>
+    ${r.word_traps.length ? `<h3>Word traps</h3><ul>${rows(r.word_traps, (w) => `<li><b>${w.you_said}</b> (${w.problem}) → <b>${w.we_say}</b></li>`)}</ul>` : ''}
+    ${r.pronunciation.length ? `<h3>Pronunciation</h3><ul>${rows(r.pronunciation, (p) => `<li>${p.word} ${p.ipa} — ${p.watch_for}</li>`)}</ul>` : ''}
+    <h3>Vocabulary</h3><ul>${rows(r.vocabulary_learned, (v) => `<li><b>${v.term}</b> — ${v.meaning}</li>`)}</ul>
+    <h3>What went well</h3><ul>${rows(r.what_went_well, (w) => `<li>${w}</li>`)}</ul>
+    ${r.homework.length ? `<h3>Before next class</h3><ul>${rows(r.homework, (h) => `<li>${h}</li>`)}</ul>` : ''}
+    <h3>Next session focus</h3><p>${r.next_recommendation}</p>
+  `;
+}
+
+$('end-btn').onclick = async () => {
+  $('end-btn').disabled = true;
+  try {
+    const data = await api('end');
+    renderRecap(data.report);
+    show('report-screen');
+  } catch (e) {
+    $('chat-error').textContent = e.message;
+  } finally {
+    $('end-btn').disabled = false;
+  }
+};
+
+$('again-btn').onclick = () => show('setup-screen');
+</script>
+</body>
+</html>

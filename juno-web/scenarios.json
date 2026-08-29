@@ -1,0 +1,123 @@
+{
+  "business": [
+    {
+      "id": "on_the_ball",
+      "title": "Always On the Ball",
+      "expression": "to be on the ball",
+      "cefr": "B1",
+      "role": "my manager at Abadía Retuerta",
+      "domain": "whether I am always on the ball at work — in meetings, with guests, during busy shifts",
+      "correction_instruction": "correct me gently if I make a mistake",
+      "push_instruction": "speak clearly and at a comfortable pace",
+      "closing_instruction": "tell me what I did well"
+    },
+    {
+      "id": "piece_of_cake",
+      "title": "A Piece of Cake at Work",
+      "expression": "to be a piece of cake",
+      "cefr": "B1",
+      "role": "a new colleague at the hotel",
+      "domain": "which parts of my job I find easy — a piece of cake — and which parts I find more difficult",
+      "correction_instruction": "correct me if I make a grammar mistake",
+      "push_instruction": "use the expression naturally in your questions",
+      "closing_instruction": "tell me what I did well"
+    },
+    {
+      "id": "clear_up",
+      "title": "Clearing Up Confusion",
+      "expression": "to clear up",
+      "cefr": "B1",
+      "role": "a guest at Abadía Retuerta with a small misunderstanding or question about their booking, the restaurant, or the facilities",
+      "domain": "I work at the hotel and I will try to clear up the confusion professionally",
+      "correction_instruction": "correct me gently if I make a mistake",
+      "push_instruction": "keep the conversation realistic and professional",
+      "closing_instruction": "after the conversation, tell me what I did well"
+    },
+    {
+      "id": "frown_on",
+      "title": "What's Frowned On Here?",
+      "expression": "to frown on",
+      "cefr": "B1",
+      "role": "my colleague at a luxury hotel",
+      "domain": "things that are frowned on in our workplace — with guests, in the team, and in professional situations",
+      "correction_instruction": "correct my English throughout",
+      "push_instruction": "push me to give detailed answers and use the expression naturally",
+      "closing_instruction": "give me feedback at the end"
+    },
+    {
+      "id": "mess_up",
+      "title": "When Things Get Messed Up",
+      "expression": "to mess up",
+      "cefr": "B1",
+      "role": "my manager at Abadía Retuerta",
+      "domain": "situations at work where things have been messed up — by me, by a colleague, or by a supplier — and how I handled it",
+      "correction_instruction": "correct my English",
+      "push_instruction": "push me to speak in full sentences",
+      "closing_instruction": "tell me what I learned"
+    },
+    {
+      "id": "make_up",
+      "title": "Making Up and Making Excuses",
+      "expression": "to make up",
+      "cefr": "B1",
+      "role": "my colleague",
+      "domain": "times at work when someone has made up an excuse, or when colleagues have fallen out and had to make up — both meanings",
+      "correction_instruction": "correct my grammar throughout",
+      "push_instruction": "use the expression in both meanings",
+      "closing_instruction": "give me feedback at the end"
+    },
+    {
+      "id": "start_from_scratch",
+      "title": "Starting From Scratch",
+      "expression": "to start from scratch",
+      "cefr": "B2",
+      "role": "a business consultant visiting Abadía Retuerta",
+      "domain": "situations where we have had to start something from scratch — a new project, a new process, a new team approach",
+      "correction_instruction": "correct my English",
+      "push_instruction": "push me to be specific and use sophisticated vocabulary",
+      "closing_instruction": "give me feedback at the end"
+    },
+    {
+      "id": "barge_in",
+      "title": "Barging In at the Wrong Moment",
+      "expression": "to barge in on",
+      "cefr": "B2",
+      "role": "my colleague at a luxury hotel",
+      "domain": "situations where someone has barged in on a meeting, a guest conversation, or an important moment, and how I handled it",
+      "correction_instruction": "correct my English throughout",
+      "push_instruction": "push me to sound professional",
+      "closing_instruction": "tell me what I would do differently"
+    },
+    {
+      "id": "blue_moon",
+      "title": "Once in a Blue Moon",
+      "expression": "once in a blue moon",
+      "cefr": "B2",
+      "role": "my manager, in a performance review at Abadía Retuerta",
+      "domain": "things that only happen once in a blue moon at the hotel — rare guest requests, unusual situations, special events",
+      "correction_instruction": "correct my English",
+      "push_instruction": "push me to use the expression naturally",
+      "closing_instruction": "give me feedback on my fluency at the end"
+    }
+  ],
+  "fluency_techniques": [
+    {
+      "id": "hesitation_fillers",
+      "title": "Hesitation Fillers",
+      "trigger": "a pause of more than three seconds",
+      "instruction": "remind the student to use a filler: well, let me think, actually, you know, or to be honest"
+    },
+    {
+      "id": "speed_rhythm",
+      "title": "Speed & Rhythm",
+      "trigger": "any short, hesitant answer",
+      "instruction": "ask the student to repeat the answer faster and more confidently"
+    },
+    {
+      "id": "connectors",
+      "title": "Connectors",
+      "trigger": "a short answer that could be expanded",
+      "instruction": "push the student to expand it using: however, although, on the other hand, as a result, therefore, in addition, despite"
+    }
+  ]
+}
