@@ -1,9 +1,9 @@
-# S&R Tutor Playbook — text prototype
+# Juno — S&R Tutor Playbook, text prototype
 
-A text-only proof of the teaching brain, before any voice infrastructure gets
-built. Same rules as the published Tutor Playbook (correction tiers, A2–C1
-level adaptation, session arc, end-of-call report, student memory) — running
-in a terminal chat instead of on a call.
+A text-only proof of the teaching brain behind Juno, before any voice
+infrastructure gets built. Same rules as the published Tutor Playbook
+(correction tiers, A2–C1 level adaptation, session arc, end-of-call report,
+student memory) — running in a terminal chat instead of on a call.
 
 The report format is deliberately close to the class recaps S&R already
 produces by hand for real students: a "You said / Better English" table,
@@ -27,9 +27,9 @@ python tutor.py --mode business --scenario start_from_scratch
 python tutor.py --mode business --student alex --level B2
 ```
 
-Type replies at the `You:` prompt. Type `/end` to close the call — the tutor
-gives spoken feedback, then a full class recap prints to the terminal and
-gets written back into that student's memory file.
+Type replies at the `You:` prompt. Type `/end` to close the call — Juno gives
+spoken feedback, then a full class recap prints to the terminal and gets
+written back into that student's memory file.
 
 ## Files
 
@@ -54,7 +54,7 @@ Doesn't touch: voice (recognition, synthesis, endpointing, latency), the web
 shell, or student accounts. Per the playbook's own sequencing, those come
 after this loop feels right — see the `/loop`-worthy next step of running a
 few sessions yourself and each of the three trusted students the plan calls
-for, and noting anywhere the tutor over-corrects, under-corrects, or asks a
+for, and noting anywhere Juno over-corrects, under-corrects, or asks a
 question that doesn't fit the level.
 
 ## A note on real student data

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-S&R Tutor Playbook — text-only prototype of the teaching brain.
+Juno — S&R Tutor Playbook, text-only prototype of the teaching brain.
 
 Proves out the pedagogy (correction tiers, level adaptation, session arc,
 end-of-call report, student memory) in plain text before any speech
@@ -130,10 +130,11 @@ PRONUNCIATION_POLICY = textwrap.dedent("""\
 
 def build_system_prompt(level: str, mode: str, scenario: dict | None, student: dict) -> str:
     parts = [
-        "You are the S&R Spain English tutor. You follow the S&R Tutor Playbook exactly. "
-        "You are warm, direct, and economical with words — you are not a customer service "
-        "bot and you do not pad your replies with disclaimers or enthusiasm. Keep your own "
-        "turns to 1-3 sentences unless the scenario calls for more.",
+        "You are Juno, the S&R Spain English tutor. You follow the S&R Tutor Playbook "
+        "exactly. You are warm, direct, and economical with words — you are not a customer "
+        "service bot and you do not pad your replies with disclaimers or enthusiasm. Keep "
+        "your own turns to 1-3 sentences unless the scenario calls for more. Introduce "
+        "yourself as Juno only on a first-ever session with a student, never every call.",
         f"\nSTUDENT LEVEL: {level}\n{LEVEL_RULES[level]}",
         f"\nSPANISH USAGE POLICY: {SPANISH_POLICY[level]}",
         f"\nCORRECTION LAYER:\n{CORRECTION_TIERS}",
@@ -404,12 +405,12 @@ def run_call(client: anthropic.Anthropic, level: str, mode: str, scenario: dict 
     messages: list[dict] = []
 
     print("\n" + "-" * 60)
-    print(f"S&R TUTOR — {mode.upper()} · level {level}"
+    print(f"JUNO — S&R TUTOR — {mode.upper()} · level {level}"
           + (f" · scenario: {scenario['title']}" if scenario else ""))
     print("Type your replies. Type /end to finish the call and get your report.")
     print("-" * 60 + "\n")
 
-    # Tutor opens, per the session arc — no user turn yet.
+    # Juno opens, per the session arc — no user turn yet.
     opening = client.messages.create(
         model=MODEL,
         max_tokens=1024,
@@ -418,7 +419,7 @@ def run_call(client: anthropic.Anthropic, level: str, mode: str, scenario: dict 
         output_config={"effort": "medium"},
     )
     opening_text = next(b.text for b in opening.content if b.type == "text")
-    print(f"Tutor: {opening_text}\n")
+    print(f"Juno: {opening_text}\n")
     messages.append({"role": "user", "content": "(the call has just connected — open it)"})
     messages.append({"role": "assistant", "content": opening_text})
 
@@ -443,7 +444,7 @@ def run_call(client: anthropic.Anthropic, level: str, mode: str, scenario: dict 
             output_config={"effort": "medium"},
         )
         reply = next(b.text for b in response.content if b.type == "text")
-        print(f"Tutor: {reply}\n")
+        print(f"Juno: {reply}\n")
         messages.append({"role": "assistant", "content": reply})
 
     print("\n(generating report...)")
