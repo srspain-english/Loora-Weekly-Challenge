@@ -12,8 +12,10 @@ Usage:
     python tutor.py --mode free
     python tutor.py --mode business
     python tutor.py --mode business --scenario start_from_scratch
-    python tutor.py --mode business --student carlos --level B2
+    python tutor.py --mode business --student alex --level B2
 """
+
+from __future__ import annotations
 
 import argparse
 import json
