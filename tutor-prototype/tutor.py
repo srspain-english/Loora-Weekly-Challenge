@@ -385,10 +385,14 @@ def print_report(report: dict) -> None:
 
 
 def apply_report_to_student(student: dict, report: dict, mode: str, scenario: dict | None) -> dict:
+    known_terms = {
+        entry.split(" — ")[0].strip().lower() for entry in student["vocab_acquired_log"]
+    }
     for v in report["vocabulary_learned"]:
-        entry = f"{v['term']} — {v['meaning']}"
-        if entry not in student["vocab_acquired_log"]:
-            student["vocab_acquired_log"].append(entry)
+        term_key = v["term"].strip().lower()
+        if term_key not in known_terms:
+            student["vocab_acquired_log"].append(f"{v['term']} — {v['meaning']}")
+            known_terms.add(term_key)
     student["recurring_error_patterns"] = report["updated_recurring_error_patterns"]
     student["next_recommendation"] = report["next_recommendation"]
     student.setdefault("session_history", []).append({
