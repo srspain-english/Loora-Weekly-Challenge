@@ -124,11 +124,8 @@ INDEX_HTML = """<!doctype html>
     </select>
 
     <div id="scenario-row" style="display:none">
-      <label for="pack">Scenario pack</label>
-      <select id="pack"></select>
-
-      <label for="scenario">Scenario</label>
-      <select id="scenario"></select>
+      <label for="scenario">Scenario <span style="text-transform:none;color:var(--muted)">(optional — random if left as "Surprise me")</span></label>
+      <select id="scenario"><option value="">Surprise me</option></select>
     </div>
 
     <div class="row" style="margin-top:18px">
@@ -188,37 +185,23 @@ function bubble(who, text) {
   log.scrollTop = log.scrollHeight;
 }
 
-function populateScenarios() {
-  const packId = $('pack').value;
-  const pack = scenarios.business_packs.find((p) => p.id === packId);
-  const sel = $('scenario');
-  sel.innerHTML = '';
-  (pack ? pack.scenarios : []).forEach((s) => {
-    const opt = document.createElement('option');
-    opt.value = s.id;
-    opt.textContent = `${s.title} (${s.cefr})`;
-    sel.appendChild(opt);
-  });
-}
-
 fetch('/scenarios.json').then((r) => r.json()).then((data) => {
   scenarios = data;
   if (!scenarios.business_packs) {
     throw new Error("scenarios.json is an old version — re-download it.");
   }
-  const packSel = $('pack');
+  const sel = $('scenario');
   scenarios.business_packs.forEach((p) => {
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    opt.textContent = p.label;
-    packSel.appendChild(opt);
+    p.scenarios.forEach((s) => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = `${s.title} (${s.cefr})`;
+      sel.appendChild(opt);
+    });
   });
-  populateScenarios();
 }).catch((e) => {
-  $('start-error').textContent = 'Could not load scenario packs: ' + e.message;
+  $('start-error').textContent = 'Could not load scenarios: ' + e.message;
 });
-
-$('pack').onchange = populateScenarios;
 
 $('mode').onchange = () => {
   $('scenario-row').style.display = $('mode').value === 'business' ? 'block' : 'none';
@@ -233,8 +216,7 @@ $('start-btn').onclick = async () => {
       student: $('student').value || 'demo',
       mode,
       level: $('level').value,
-      pack: mode === 'business' ? $('pack').value : null,
-      scenario_id: mode === 'business' ? $('scenario').value : null,
+      scenario_id: mode === 'business' ? ($('scenario').value || null) : null,
     });
     $('chat-log').innerHTML = '';
     bubble('juno', data.reply);
