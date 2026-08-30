@@ -416,7 +416,7 @@ def run_call(client: anthropic.Anthropic, level: str, mode: str, scenario: dict 
     print("\n" + "-" * 60)
     print(f"JUNO — S&R TUTOR — {mode.upper()} · level {level}"
           + (f" · scenario: {scenario['title']}" if scenario else ""))
-    print("Type your replies. Type /end to finish the call and get your report.")
+    print("Type your replies. Type 'end' (or /end, quit) to finish the call and get your report.")
     print("-" * 60 + "\n")
 
     # Juno opens, per the session arc — no user turn yet.
@@ -438,7 +438,8 @@ def run_call(client: anthropic.Anthropic, level: str, mode: str, scenario: dict 
             print("\n(call dropped — no report generated)")
             return
 
-        if user_input in ("/end", "/quit", "/exit"):
+        exit_words = {"end", "quit", "exit", "/end", "/quit", "/exit"}
+        if user_input.lower().strip(".!") in exit_words:
             break
         if not user_input:
             continue
