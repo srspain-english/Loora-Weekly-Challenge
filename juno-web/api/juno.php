@@ -19,6 +19,7 @@
 declare(strict_types=1);
 session_start();
 header('Content-Type: application/json');
+header('Cache-Control: no-store');
 
 $configPath = __DIR__ . '/../config.php';
 if (!file_exists($configPath)) {

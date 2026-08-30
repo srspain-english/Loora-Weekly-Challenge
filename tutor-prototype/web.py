@@ -307,6 +307,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -314,6 +315,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -413,10 +415,23 @@ def main() -> None:
     if not os.environ.get("ANTHROPIC_API_KEY"):
         sys.exit("Set ANTHROPIC_API_KEY first, same as with tutor.py.")
     url = f"http://127.0.0.1:{PORT}"
+
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    except OSError:
+        sys.exit(
+            f"Could not start — port {PORT} is already in use.\n"
+            "This almost always means an old copy of this server is still running in "
+            "another Terminal window or tab. Find that window and press Ctrl+C there, "
+            "or close all Terminal windows and try again. If it's already running fine, "
+            f"just open {url} in your browser instead of starting a new one."
+        )
+
+    # Only announce success once the server has actually bound to the port.
     print(f"Juno is running. Opening {url} in your browser now.")
     print("Leave this Terminal window open. Press Ctrl+C here to stop it when you're done.")
     threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    server.serve_forever()
 
 
 if __name__ == "__main__":
