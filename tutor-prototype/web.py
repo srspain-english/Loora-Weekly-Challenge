@@ -1,26 +1,37 @@
 #!/usr/bin/env python3
 """
-Juno — local browser version.
+Juno — browser version, runnable locally or deployed (e.g. on Render).
 
-Runs a tiny web server on your own Mac (nothing is uploaded anywhere,
-nobody outside this computer can reach it) so a real student can use
-Juno through an ordinary webpage instead of Terminal. This reuses the
-exact same tested logic as tutor.py — the teaching rules, correction
-tiers, and report format are identical, just reached over a browser
-tab instead of stdin/stdout.
+Same tested logic as tutor.py (imported directly, not reimplemented) —
+system prompt construction, correction tiers, report schema, student
+memory — reached through a chat webpage instead of Terminal, with real
+voice input/output in supporting browsers.
 
-Usage:
+Local use (unchanged from before):
     export ANTHROPIC_API_KEY=sk-ant-...
     python3 web.py
+Opens http://127.0.0.1:8765 automatically. No passphrase needed.
 
-Then open the link it prints (it also opens automatically). Press
-Ctrl+C in Terminal when you're done to stop it.
+Deployed use (e.g. Render): set environment variables
+    ANTHROPIC_API_KEY        - required
+    JUNO_ACCESS_PASSPHRASE   - required once this is reachable by anyone
+                                other than you; gates every call
+    PORT                     - set automatically by most hosts
+When PORT is set in the environment, this binds to 0.0.0.0 instead of
+127.0.0.1 (loopback-only) and skips auto-opening a browser, since that
+only makes sense on your own machine.
+
+Unauthenticated public deployments are a real risk: every message
+spends your Anthropic API credit with no limit. Always set
+JUNO_ACCESS_PASSPHRASE before sharing a deployed URL with anyone.
 """
 
 from __future__ import annotations
 
+import http.cookies
 import json
 import os
+import secrets
 import sys
 import threading
 import webbrowser
@@ -30,7 +41,18 @@ import anthropic
 
 import tutor  # the exact tested logic: prompts, tiers, report schema
 
-PORT = 8765
+RUNNING_DEPLOYED = bool(os.environ.get("PORT"))
+HOST = "0.0.0.0" if RUNNING_DEPLOYED else "127.0.0.1"
+PORT = int(os.environ.get("PORT", 8765))
+ACCESS_PASSPHRASE = os.environ.get("JUNO_ACCESS_PASSPHRASE", "")
+MAX_MESSAGES_PER_CALL = 40
+MAX_CALLS_PER_SESSION = 8
+
+# Per-browser-session state, keyed by a random cookie value. Necessary as
+# soon as more than one person can reach this server at once - a single
+# global dict (fine for one local user) would let concurrent students
+# overwrite each other's calls.
+SESSIONS: dict[str, dict] = {}
 
 INDEX_HTML = """<!doctype html>
 <html lang="en">
@@ -57,7 +79,7 @@ INDEX_HTML = """<!doctype html>
   .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}
   label{display:block;font-size:12.5px;color:var(--muted);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em}
   label:first-child{margin-top:0}
-  input[type=text], select{
+  input[type=text], input[type=password], select{
     width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;
     font-family:inherit;font-size:14px;background:var(--bg);color:var(--ink);
   }
@@ -67,8 +89,15 @@ INDEX_HTML = """<!doctype html>
   }
   button:disabled{opacity:.5;cursor:default}
   button.ghost{background:transparent;color:var(--ink-soft);border:1px solid var(--line)}
-  .row{display:flex;gap:10px;flex-wrap:wrap}
+  button.icon{
+    width:44px;height:44px;padding:0;border-radius:50%;font-size:18px;
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  }
+  button.icon.recording{background:#B0392A}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   .error{color:#B0392A;font-size:13px;margin-top:10px}
+  #auth-screen{display:block}
+  #setup-screen{display:none}
   #chat-screen{display:none}
   #report-screen{display:none}
   .chat-log{
@@ -84,6 +113,8 @@ INDEX_HTML = """<!doctype html>
     flex:1;padding:11px 14px;border:1px solid var(--line);border-radius:999px;
     font-family:inherit;font-size:14.5px;background:var(--bg);color:var(--ink);
   }
+  .voice-row{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--muted)}
+  .voice-row label{margin:0;text-transform:none;letter-spacing:0;display:flex;align-items:center;gap:6px;cursor:pointer}
   .recap h3{font-family:'Space Grotesk',sans-serif;font-size:14px;margin:20px 0 8px;color:var(--ink)}
   .recap h3:first-child{margin-top:0}
   .recap table{width:100%;border-collapse:collapse;font-size:13.5px}
@@ -103,7 +134,14 @@ INDEX_HTML = """<!doctype html>
 <body>
 <div class="wrap">
   <div class="brand"><span class="brand-mark">Juno</span><span class="brand-sub">Teaching Assistant</span></div>
-  <p class="lede">Running locally on this computer — nothing leaves this machine except the messages sent to Claude.</p>
+  <p class="lede" id="lede">Loading…</p>
+
+  <div id="auth-screen" class="panel">
+    <label for="passphrase">Access code</label>
+    <input type="password" id="passphrase" placeholder="Ask your teacher for the code">
+    <div class="row" style="margin-top:16px"><button id="auth-btn">Enter</button></div>
+    <div class="error" id="auth-error"></div>
+  </div>
 
   <div id="setup-screen" class="panel">
     <label for="student">Student name</label>
@@ -137,8 +175,12 @@ INDEX_HTML = """<!doctype html>
   <div id="chat-screen" class="panel">
     <div class="chat-log" id="chat-log"></div>
     <div class="composer">
+      <button class="icon ghost" id="mic-btn" title="Hold to talk" style="display:none">🎤</button>
       <input type="text" id="msg-input" placeholder="Type your reply…">
       <button id="send-btn">Send</button>
+    </div>
+    <div class="voice-row">
+      <label><input type="checkbox" id="speak-toggle" checked> Juno speaks replies aloud</label>
     </div>
     <div class="row" style="margin-top:12px;justify-content:flex-end">
       <button class="ghost" id="end-btn">End call</button>
@@ -158,12 +200,15 @@ INDEX_HTML = """<!doctype html>
 <script>
 const $ = (id) => document.getElementById(id);
 let scenarios = null;
+let recognition = null;
+let recognitionActive = false;
 
 async function api(path, body) {
   const res = await fetch(path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body || {}),
+    credentials: 'same-origin',
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Something went wrong.');
@@ -171,7 +216,7 @@ async function api(path, body) {
 }
 
 function show(id) {
-  ['setup-screen', 'chat-screen', 'report-screen'].forEach(
+  ['auth-screen', 'setup-screen', 'chat-screen', 'report-screen'].forEach(
     (s) => ($(s).style.display = s === id ? 'block' : 'none')
   );
 }
@@ -185,23 +230,88 @@ function bubble(who, text) {
   log.scrollTop = log.scrollHeight;
 }
 
-fetch('/scenarios.json').then((r) => r.json()).then((data) => {
-  scenarios = data;
-  if (!scenarios.business_packs) {
-    throw new Error("scenarios.json is an old version — re-download it.");
-  }
-  const sel = $('scenario');
-  scenarios.business_packs.forEach((p) => {
-    p.scenarios.forEach((s) => {
-      const opt = document.createElement('option');
-      opt.value = s.id;
-      opt.textContent = `${s.title} (${s.cefr})`;
-      sel.appendChild(opt);
-    });
-  });
-}).catch((e) => {
-  $('start-error').textContent = 'Could not load scenarios: ' + e.message;
+function speak(text) {
+  if (!$('speak-toggle').checked || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'en-US';
+  u.rate = 0.98;
+  const voices = window.speechSynthesis.getVoices();
+  const en = voices.find((v) => v.lang && v.lang.startsWith('en'));
+  if (en) u.voice = en;
+  window.speechSynthesis.speak(u);
+}
+
+function setupVoiceInput() {
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) return; // Safari and some browsers don't support this - mic stays hidden
+  recognition = new SpeechRec();
+  recognition.lang = 'en-US';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  recognition.onresult = (e) => {
+    $('msg-input').value = e.results[0][0].transcript;
+  };
+  recognition.onerror = () => { recognitionActive = false; $('mic-btn').classList.remove('recording'); };
+  recognition.onend = () => { recognitionActive = false; $('mic-btn').classList.remove('recording'); };
+
+  const micBtn = $('mic-btn');
+  micBtn.style.display = 'flex';
+  const start = (e) => {
+    e.preventDefault();
+    if (recognitionActive) return;
+    recognitionActive = true;
+    micBtn.classList.add('recording');
+    try { recognition.start(); } catch (err) { /* already started, ignore */ }
+  };
+  const stop = (e) => {
+    e.preventDefault();
+    if (!recognitionActive) return;
+    recognition.stop();
+  };
+  micBtn.addEventListener('mousedown', start);
+  micBtn.addEventListener('touchstart', start);
+  micBtn.addEventListener('mouseup', stop);
+  micBtn.addEventListener('mouseleave', stop);
+  micBtn.addEventListener('touchend', stop);
+}
+
+// Try an empty passphrase first - if no access code is configured server-side,
+// this succeeds immediately and the auth screen never has to be shown.
+api('/api/auth', { passphrase: '' }).then(() => {
+  $('lede').textContent = 'A live practice call, corrected as you go.';
+  afterAuth();
+}).catch(() => {
+  $('lede').textContent = 'A live practice call, corrected as you go. Enter the access code to begin.';
 });
+
+function afterAuth() {
+  show('setup-screen');
+  fetch('/scenarios.json', { credentials: 'same-origin' }).then((r) => r.json()).then((data) => {
+    scenarios = data;
+    if (!scenarios.business_packs) throw new Error('scenarios.json is an old version.');
+    const sel = $('scenario');
+    scenarios.business_packs.forEach((p) => {
+      p.scenarios.forEach((s) => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = `${s.title} (${s.cefr})`;
+        sel.appendChild(opt);
+      });
+    });
+  }).catch((e) => { $('start-error').textContent = 'Could not load scenarios: ' + e.message; });
+  setupVoiceInput();
+}
+
+$('auth-btn').onclick = async () => {
+  $('auth-error').textContent = '';
+  try {
+    await api('/api/auth', { passphrase: $('passphrase').value });
+    afterAuth();
+  } catch (e) {
+    $('auth-error').textContent = e.message;
+  }
+};
 
 $('mode').onchange = () => {
   $('scenario-row').style.display = $('mode').value === 'business' ? 'block' : 'none';
@@ -220,6 +330,7 @@ $('start-btn').onclick = async () => {
     });
     $('chat-log').innerHTML = '';
     bubble('juno', data.reply);
+    speak(data.reply);
     show('chat-screen');
   } catch (e) {
     $('start-error').textContent = e.message;
@@ -239,6 +350,7 @@ async function sendMessage() {
   try {
     const data = await api('/api/message', { text });
     bubble('juno', data.reply);
+    speak(data.reply);
   } catch (e) {
     $('chat-error').textContent = e.message;
   } finally {
@@ -285,16 +397,37 @@ $('again-btn').onclick = () => show('setup-screen');
 """
 
 client = anthropic.Anthropic()
-call_state: dict = {}
 
 
 class Handler(BaseHTTPRequestHandler):
+    def _load_session(self) -> dict:
+        cookies = http.cookies.SimpleCookie()
+        cookies.load(self.headers.get("Cookie", ""))
+        sid = cookies["juno_sid"].value if "juno_sid" in cookies else None
+        if not sid or sid not in SESSIONS:
+            sid = secrets.token_urlsafe(24)
+            SESSIONS[sid] = {"authed": not ACCESS_PASSPHRASE, "call_count": 0}
+            self._new_sid = sid
+        else:
+            self._new_sid = None
+        self._sid = sid
+        return SESSIONS[sid]
+
+    def _cookie_header(self) -> str | None:
+        if getattr(self, "_new_sid", None):
+            secure = "; Secure" if RUNNING_DEPLOYED else ""
+            return f"juno_sid={self._new_sid}; Path=/; HttpOnly; SameSite=Lax{secure}"
+        return None
+
     def _send_json(self, obj, status: int = 200) -> None:
         body = json.dumps(obj).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        cookie = self._cookie_header()
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
 
@@ -303,15 +436,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        cookie = self._cookie_header()
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
 
-    def _read_json(self) -> dict:
-        length = int(self.headers.get("Content-Length", 0) or 0)
-        raw = self.rfile.read(length) if length else b"{}"
-        return json.loads(raw or b"{}")
-
     def do_GET(self) -> None:
+        self._load_session()
         if self.path in ("/", "/index.html"):
             self._send_bytes(INDEX_HTML.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path == "/scenarios.json":
@@ -321,20 +453,51 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self) -> None:
+        session = self._load_session()
         try:
-            data = self._read_json()
-            if self.path == "/api/start":
-                self._handle_start(data)
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            raw = self.rfile.read(length) if length else b"{}"
+            data = json.loads(raw or b"{}")
+
+            if self.path == "/api/auth":
+                self._handle_auth(session, data)
+            elif self.path == "/api/start":
+                self._require_auth(session)
+                self._handle_start(session, data)
             elif self.path == "/api/message":
-                self._handle_message(data)
+                self._require_auth(session)
+                self._handle_message(session, data)
             elif self.path == "/api/end":
-                self._handle_end(data)
+                self._require_auth(session)
+                self._handle_end(session, data)
             else:
                 self._send_json({"error": "not found"}, 404)
+        except _AuthError:
+            self._send_json({"error": "Not authenticated."}, 401)
         except Exception as e:  # noqa: BLE001 - surface any failure to the browser
             self._send_json({"error": str(e)}, 500)
 
-    def _handle_start(self, data: dict) -> None:
+    def _require_auth(self, session: dict) -> None:
+        if not session.get("authed"):
+            raise _AuthError()
+
+    def _handle_auth(self, session: dict, data: dict) -> None:
+        if not ACCESS_PASSPHRASE:
+            session["authed"] = True
+            self._send_json({"ok": True})
+            return
+        if secrets.compare_digest(str(data.get("passphrase") or ""), ACCESS_PASSPHRASE):
+            session["authed"] = True
+            self._send_json({"ok": True})
+        else:
+            self._send_json({"error": "Wrong passphrase."}, 401)
+
+    def _handle_start(self, session: dict, data: dict) -> None:
+        if session.get("call_count", 0) >= MAX_CALLS_PER_SESSION:
+            self._send_json({"error": "Call limit reached for this browser session."}, 429)
+            return
+        session["call_count"] = session.get("call_count", 0) + 1
+
         student_id = (data.get("student") or "demo").strip().lower().replace(" ", "_") or "demo"
         student = tutor.load_student(student_id)
         mode = "business" if data.get("mode") == "business" else "free"
@@ -345,10 +508,7 @@ class Handler(BaseHTTPRequestHandler):
         if level not in tutor.LEVEL_RULES:
             level = "B1"
 
-        scenario = (
-            tutor.pick_scenario(data.get("scenario_id"), data.get("pack"))
-            if mode == "business" else None
-        )
+        scenario = tutor.pick_scenario(data.get("scenario_id"), data.get("pack")) if mode == "business" else None
 
         system = tutor.build_system_prompt(level, mode, scenario, student)
         messages = [{"role": "user", "content": "(the call has just connected — open it)"}]
@@ -358,53 +518,68 @@ class Handler(BaseHTTPRequestHandler):
         reply = next(b.text for b in response.content if b.type == "text")
         messages.append({"role": "assistant", "content": reply})
 
-        call_state.clear()
-        call_state.update({
+        session["call"] = {
             "student": student, "mode": mode, "scenario": scenario,
-            "system": system, "messages": messages,
-        })
+            "system": system, "messages": messages, "message_count": 0,
+        }
         self._send_json({"reply": reply, "scenario": scenario["title"] if scenario else None})
 
-    def _handle_message(self, data: dict) -> None:
-        if "system" not in call_state:
+    def _handle_message(self, session: dict, data: dict) -> None:
+        call = session.get("call")
+        if not call:
             self._send_json({"error": "No call in progress. Start a call first."}, 400)
+            return
+        if call["message_count"] >= MAX_MESSAGES_PER_CALL:
+            self._send_json({"error": "Message limit reached for this call. End the call to see your report."}, 429)
             return
         text = (data.get("text") or "").strip()
         if not text:
             self._send_json({"error": "Empty message."}, 400)
             return
-        call_state["messages"].append({"role": "user", "content": text})
+
+        call["message_count"] += 1
+        call["messages"].append({"role": "user", "content": text})
         response = client.messages.create(
             model=tutor.MODEL, max_tokens=1024,
-            system=call_state["system"], messages=call_state["messages"],
+            system=call["system"], messages=call["messages"],
         )
         reply = next(b.text for b in response.content if b.type == "text")
-        call_state["messages"].append({"role": "assistant", "content": reply})
+        call["messages"].append({"role": "assistant", "content": reply})
         self._send_json({"reply": reply})
 
-    def _handle_end(self, data: dict) -> None:
-        if "system" not in call_state:
+    def _handle_end(self, session: dict, data: dict) -> None:
+        call = session.get("call")
+        if not call:
             self._send_json({"error": "No call in progress."}, 400)
             return
-        report = tutor.generate_report(client, call_state["messages"])
-        student = tutor.apply_report_to_student(
-            call_state["student"], report, call_state["mode"], call_state["scenario"]
-        )
+        report = tutor.generate_report(client, call["messages"])
+        student = tutor.apply_report_to_student(call["student"], report, call["mode"], call["scenario"])
         tutor.save_student(student)
-        call_state.clear()
+        session["call"] = None
         self._send_json({"report": report})
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002 - stdlib signature
-        pass  # keep Terminal quiet; errors still surface in the browser
+        pass  # keep stdout quiet; errors still surface in the browser
+
+
+class _AuthError(Exception):
+    pass
 
 
 def main() -> None:
     if not os.environ.get("ANTHROPIC_API_KEY"):
         sys.exit("Set ANTHROPIC_API_KEY first, same as with tutor.py.")
-    url = f"http://127.0.0.1:{PORT}"
+    if RUNNING_DEPLOYED and not ACCESS_PASSPHRASE:
+        sys.exit(
+            "Running with PORT set (looks like a real deployment) but "
+            "JUNO_ACCESS_PASSPHRASE is not set. Refusing to start unprotected on "
+            "the public internet — set that environment variable first."
+        )
+
+    url = f"http://127.0.0.1:{PORT}" if not RUNNING_DEPLOYED else f"port {PORT}"
 
     try:
-        server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+        server = ThreadingHTTPServer((HOST, PORT), Handler)
     except OSError:
         sys.exit(
             f"Could not start — port {PORT} is already in use.\n"
@@ -414,10 +589,12 @@ def main() -> None:
             f"just open {url} in your browser instead of starting a new one."
         )
 
-    # Only announce success once the server has actually bound to the port.
-    print(f"Juno is running. Opening {url} in your browser now.")
-    print("Leave this Terminal window open. Press Ctrl+C here to stop it when you're done.")
-    threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    if RUNNING_DEPLOYED:
+        print(f"Juno is running on {url} (access code {'required' if ACCESS_PASSPHRASE else 'NOT required — set JUNO_ACCESS_PASSPHRASE'}).")
+    else:
+        print(f"Juno is running. Opening {url} in your browser now.")
+        print("Leave this Terminal window open. Press Ctrl+C here to stop it when you're done.")
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     server.serve_forever()
 
 
