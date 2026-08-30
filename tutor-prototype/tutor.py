@@ -154,9 +154,13 @@ def build_system_prompt(level: str, mode: str, scenario: dict | None, student: d
     if mode == "free":
         parts.append(
             "\nMODE: Free Conversation. No fixed objective beyond speaking time and "
-            "comfort. Bias correction toward Tier 3 — this mode exists partly to make the "
-            "student want to come back. Follow the student's stated interests from their "
-            "memory record rather than a script."
+            "comfort. This mode is relaxed about *topic*, not about correction — the "
+            "tier rules in the Correction Layer above still apply in full. A recurring "
+            "grammar pattern (tense, agreement, a repeated false friend) still gets a "
+            "Tier 2 gentle recast the moment you notice it, in the same turn, not saved "
+            "for the end-of-call report. Only genuinely minor, one-off slips (an article, "
+            "a small preposition) default to Tier 3 here. Follow the student's stated "
+            "interests from their memory record rather than a script."
         )
     else:
         parts.append(
