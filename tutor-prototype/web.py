@@ -203,6 +203,9 @@ function populateScenarios() {
 
 fetch('/scenarios.json').then((r) => r.json()).then((data) => {
   scenarios = data;
+  if (!scenarios.business_packs) {
+    throw new Error("scenarios.json is an old version — re-download it.");
+  }
   const packSel = $('pack');
   scenarios.business_packs.forEach((p) => {
     const opt = document.createElement('option');
@@ -211,6 +214,8 @@ fetch('/scenarios.json').then((r) => r.json()).then((data) => {
     packSel.appendChild(opt);
   });
   populateScenarios();
+}).catch((e) => {
+  $('start-error').textContent = 'Could not load scenario packs: ' + e.message;
 });
 
 $('pack').onchange = populateScenarios;

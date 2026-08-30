@@ -189,6 +189,9 @@ $('auth-btn').onclick = async () => {
   try {
     await api('auth', { passphrase: $('passphrase').value });
     scenarios = await (await fetch('scenarios.json')).json();
+    if (!scenarios.business_packs) {
+      throw new Error("scenarios.json is an old version — re-download it.");
+    }
     const packSel = $('pack');
     scenarios.business_packs.forEach((p) => {
       const opt = document.createElement('option');
