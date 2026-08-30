@@ -151,6 +151,7 @@ INDEX_HTML = """<!doctype html>
     <select id="mode">
       <option value="free">Free Conversation</option>
       <option value="business">Business English</option>
+      <option value="structured">Structured Class</option>
     </select>
 
     <label for="level">Level</label>
@@ -500,7 +501,7 @@ class Handler(BaseHTTPRequestHandler):
 
         student_id = (data.get("student") or "demo").strip().lower().replace(" ", "_") or "demo"
         student = tutor.load_student(student_id)
-        mode = "business" if data.get("mode") == "business" else "free"
+        mode = data.get("mode") if data.get("mode") in ("business", "structured") else "free"
 
         level = data.get("level")
         if level not in tutor.LEVEL_RULES:

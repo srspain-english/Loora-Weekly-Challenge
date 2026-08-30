@@ -38,6 +38,59 @@ STUDENTS_DIR = BASE_DIR / "data" / "students"
 # Full document: the published Tutor Playbook artifact.
 # ---------------------------------------------------------------------------
 
+# Standard CEFR grammar progression — the public framework taught in every
+# general ESL course, not any single publisher's proprietary syllabus.
+# Ordered roughly easiest-to-hardest within each level. Structured Class
+# mode works through these one at a time per student, tracked in their
+# memory record, rather than repeating or randomizing.
+CEFR_GRAMMAR_QUEUE: dict[str, list[str]] = {
+    "A2": [
+        "past simple (regular and irregular verbs)",
+        "comparatives and superlatives",
+        "going to and will for future plans",
+        "present continuous for future arrangements",
+        "quantifiers: some / any / how much / how many",
+        "can / could for ability and polite requests",
+    ],
+    "B1": [
+        "present perfect simple: experience with ever / never",
+        "present perfect simple: since vs for",
+        "present perfect vs past simple",
+        "first conditional",
+        "modals of obligation: have to / must / should",
+        "passive voice in present and past simple",
+        "relative clauses with who / which / that",
+    ],
+    "B2": [
+        "present perfect continuous",
+        "second conditional",
+        "modals of deduction: must / might / can't have",
+        "reported speech",
+        "passive voice across tenses",
+        "phrasal verbs: separable and inseparable",
+    ],
+    "C1": [
+        "third conditional and mixed conditionals",
+        "inversion for emphasis",
+        "advanced discourse markers and linking",
+        "cleft sentences for emphasis",
+        "nuanced modality: would rather / I'd sooner",
+        "register control and idiomatic collocation",
+    ],
+}
+
+
+def next_grammar_point(level: str, student: dict) -> str:
+    covered = set(student.get("grammar_covered", []))
+    for point in CEFR_GRAMMAR_QUEUE.get(level, []):
+        if point not in covered:
+            return point
+    # Whole queue for this level is covered — recycle from the top rather
+    # than stall; the report can still note it as reinforcement, not new.
+    queue = CEFR_GRAMMAR_QUEUE.get(level, [])
+    return queue[0] if queue else "a review point of the student's choice"
+
+
 LEVEL_RULES = {
     "A2": (
         "Correct meaning-breaking errors only; log everything else silently. "
@@ -162,6 +215,33 @@ def build_system_prompt(level: str, mode: str, scenario: dict | None, student: d
             "a small preposition) default to Tier 3 here. Follow the student's stated "
             "interests from their memory record rather than a script."
         )
+    elif mode == "structured":
+        target_point = next_grammar_point(level, student)
+        vocab_review = student.get("vocab_acquired_log", [])
+        parts.append(
+            "\nMODE: Structured Class. This is not free-flowing conversation — it follows "
+            "a fixed six-part shape, same skeleton every session, matching how S&R runs a "
+            "real 1:1 class. Move through the parts in order; keep each part brief in a "
+            "text chat (a few exchanges, not a marathon) rather than timing it literally:\n"
+            "  1. Warm Up — one or two spontaneous personal questions. No correction at "
+            "all here, not even Tier 3 out loud — just build rapport and note anything for "
+            "later.\n"
+            "  2. Basics — quick-fire questions pushing for full-sentence answers with "
+            "correct auxiliaries (do/does/is/are), not one-word replies.\n"
+            "  3. Vocabulary Review — quiz the student on 3-5 terms from their vocab log "
+            "below (give the meaning, they give the English term, or vice versa) before "
+            "introducing anything new.\n"
+            f"  4. Main Grammar Point — today's target is: {target_point}. State the rule "
+            "in one plain sentence, model one example, then ask 4-6 questions that force "
+            "the student to produce it themselves in full sentences. This is the heart of "
+            "the session — spend the most time here.\n"
+            "  5. Agility Drill — 3-4 rapid translation prompts (you give a Spanish phrase "
+            "relevant to the student's real context from their memory record, they give "
+            "the English fast) to build fluency reflexes, not accuracy analysis.\n"
+            "  6. Homework Review — if last session's report set homework, check it "
+            "briefly before closing.\n"
+            f"Vocabulary log to draw part 3 from: {json.dumps(vocab_review)}",
+        )
     else:
         parts.append(
             "\nMODE: Business English — Abadía Retuerta pack.\n"
@@ -283,11 +363,18 @@ REPORT_TOOL = {
                                 "anything confirmed again this session. Carry forward "
                                 "unresolved old ones; drop ones clearly fixed.",
             },
+            "grammar_point_taught": {
+                "type": "string",
+                "description": "Structured Class mode only: the exact Main Grammar Point "
+                                "target given in the system prompt, echoed back verbatim "
+                                "so it can be marked covered. Empty string in any other mode.",
+            },
         },
         "required": [
             "what_we_did", "corrections", "word_traps", "pronunciation",
             "vocabulary_learned", "what_went_well", "homework",
             "next_recommendation", "updated_recurring_error_patterns",
+            "grammar_point_taught",
         ],
     },
 }
@@ -306,6 +393,7 @@ def load_student(student_id: str) -> dict:
         "recurring_error_patterns": [],
         "target_vocab_queue": [],
         "vocab_acquired_log": [],
+        "grammar_covered": [],
         "next_recommendation": "",
         "session_history": [],
     }
@@ -363,6 +451,9 @@ def print_report(report: dict) -> None:
 
     print(f"\nWhat we did today\n  {report['what_we_did']}")
 
+    if report.get("grammar_point_taught"):
+        print(f"\nMain grammar point: {report['grammar_point_taught']}")
+
     print("\nYour corrections to remember")
     for c in report["corrections"]:
         print(f"  [{c['tier']}] {c['said']!r} -> {c['better']!r}")
@@ -406,6 +497,11 @@ def apply_report_to_student(student: dict, report: dict, mode: str, scenario: di
             known_terms.add(term_key)
     student["recurring_error_patterns"] = report["updated_recurring_error_patterns"]
     student["next_recommendation"] = report["next_recommendation"]
+    taught = report.get("grammar_point_taught", "").strip()
+    if taught:
+        student.setdefault("grammar_covered", [])
+        if taught not in student["grammar_covered"]:
+            student["grammar_covered"].append(taught)
     student.setdefault("session_history", []).append({
         "date": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "mode": mode,
@@ -474,7 +570,7 @@ def run_call(client: anthropic.Anthropic, level: str, mode: str, scenario: dict 
 def main() -> None:
     global MODEL
     parser = argparse.ArgumentParser(description="S&R Tutor Playbook — text prototype")
-    parser.add_argument("--mode", choices=["free", "business"], default="free")
+    parser.add_argument("--mode", choices=["free", "business", "structured"], default="free")
     parser.add_argument("--student", default="alex")
     parser.add_argument("--level", choices=list(LEVEL_RULES), default=None,
                          help="Overrides the student's stored level for this call.")
