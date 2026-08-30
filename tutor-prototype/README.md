@@ -23,23 +23,32 @@ export ANTHROPIC_API_KEY=sk-ant-...   # or `ant auth login`
 ```bash
 python tutor.py --mode free
 python tutor.py --mode business
+python tutor.py --mode business --pack general_business
 python tutor.py --mode business --scenario start_from_scratch
 python tutor.py --mode business --student alex --level B2
 ```
 
-Type replies at the `You:` prompt. Type `/end` to close the call — Juno gives
-spoken feedback, then a full class recap prints to the terminal and gets
-written back into that student's memory file.
+Also runnable through a browser instead of Terminal — see `web.py`.
+
+Type replies at the `You:` prompt. Type `end` (or `/end`, `quit`, `exit`) to
+close the call — Juno gives spoken feedback, then a full class recap prints
+to the terminal and gets written back into that student's memory file.
 
 ## Files
 
 - `tutor.py` — the whole prototype: system-prompt construction from the
   playbook rules, the conversation loop, and the forced-tool call that
   produces the structured recap at the end.
-- `scenarios.json` — the nine Business English role-plays, reformatted from
-  the real weekly Abadía Retuerta scripts (`Loora_Abadia_Week4_Business_Fluency.html`
-  in the repo root) into the template from Playbook §04, plus the three
-  fluency-push techniques used during the wind-down.
+- `web.py` — the same logic served as a local browser page (imports `tutor.py`
+  directly) so a real student can use Juno without touching Terminal.
+- `scenarios.json` — two Business English scenario packs a student picks
+  between: **Abadía Retuerta**, the nine role-plays reformatted from the real
+  weekly scripts (`Loora_Abadia_Week4_Business_Fluency.html` in the repo
+  root) into the template from Playbook §04; and **General Business
+  English**, nine original scenarios covering common workplace idioms
+  (touch base, push back, circle back, and so on) for students outside
+  hospitality. Plus the three fluency-push techniques used during the
+  wind-down.
 - `data/students/*.json` — student memory records. `alex.json` is a
   synthetic demo profile — deliberately not modeled on a real S&R student,
   since real student data lives in your Drive, not in this repo.

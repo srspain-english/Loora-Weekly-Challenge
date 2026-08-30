@@ -273,8 +273,13 @@ try {
 
         $scenario = null;
         if ($mode === 'business') {
+            $wantedPack = $body['pack'] ?? null;
             $wantedId = $body['scenario_id'] ?? null;
-            $library = $scenarios['business'];
+            $packs = $scenarios['business_packs'];
+            if ($wantedPack) {
+                $packs = array_values(array_filter($packs, fn($p) => $p['id'] === $wantedPack)) ?: $packs;
+            }
+            $library = array_merge(...array_map(fn($p) => $p['scenarios'], $packs));
             $scenario = $wantedId
                 ? current(array_filter($library, fn($s) => $s['id'] === $wantedId)) ?: $library[array_rand($library)]
                 : $library[array_rand($library)];

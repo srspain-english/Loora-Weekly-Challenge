@@ -107,6 +107,9 @@
     </select>
 
     <div id="scenario-row" style="display:none">
+      <label for="pack">Scenario pack</label>
+      <select id="pack"></select>
+
       <label for="scenario">Scenario</label>
       <select id="scenario"></select>
     </div>
@@ -168,23 +171,39 @@ function bubble(who, text) {
   log.scrollTop = log.scrollHeight;
 }
 
+function populateScenarios() {
+  const packId = $('pack').value;
+  const pack = scenarios.business_packs.find((p) => p.id === packId);
+  const sel = $('scenario');
+  sel.innerHTML = '';
+  (pack ? pack.scenarios : []).forEach((s) => {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    opt.textContent = `${s.title} (${s.cefr})`;
+    sel.appendChild(opt);
+  });
+}
+
 $('auth-btn').onclick = async () => {
   $('auth-error').textContent = '';
   try {
     await api('auth', { passphrase: $('passphrase').value });
     scenarios = await (await fetch('scenarios.json')).json();
-    const sel = $('scenario');
-    scenarios.business.forEach((s) => {
+    const packSel = $('pack');
+    scenarios.business_packs.forEach((p) => {
       const opt = document.createElement('option');
-      opt.value = s.id;
-      opt.textContent = `${s.title} (${s.cefr})`;
-      sel.appendChild(opt);
+      opt.value = p.id;
+      opt.textContent = p.label;
+      packSel.appendChild(opt);
     });
+    populateScenarios();
     show('setup-screen');
   } catch (e) {
     $('auth-error').textContent = e.message;
   }
 };
+
+$('pack').onchange = populateScenarios;
 
 $('mode').onchange = () => {
   $('scenario-row').style.display = $('mode').value === 'business' ? 'block' : 'none';
@@ -198,6 +217,7 @@ $('start-btn').onclick = async () => {
     const data = await api('start', {
       mode,
       level: $('level').value,
+      pack: mode === 'business' ? $('pack').value : null,
       scenario_id: mode === 'business' ? $('scenario').value : null,
     });
     $('chat-log').innerHTML = '';

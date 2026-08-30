@@ -317,8 +317,15 @@ def save_student(student: dict) -> None:
     path.write_text(json.dumps(student, indent=2))
 
 
-def pick_scenario(scenario_id: str | None) -> dict:
-    library = json.loads(SCENARIOS_PATH.read_text())["business"]
+def pick_scenario(scenario_id: str | None, pack: str | None = None) -> dict:
+    packs = json.loads(SCENARIOS_PATH.read_text())["business_packs"]
+    if pack:
+        matching_packs = [p for p in packs if p["id"] == pack]
+        if not matching_packs:
+            pack_ids = ", ".join(p["id"] for p in packs)
+            sys.exit(f"Unknown pack '{pack}'. Available: {pack_ids}")
+        packs = matching_packs
+    library = [s for p in packs for s in p["scenarios"]]
     if scenario_id:
         match = next((s for s in library if s["id"] == scenario_id), None)
         if not match:
@@ -471,9 +478,12 @@ def main() -> None:
     parser.add_argument("--student", default="alex")
     parser.add_argument("--level", choices=list(LEVEL_RULES), default=None,
                          help="Overrides the student's stored level for this call.")
+    parser.add_argument("--pack", choices=["abadia_retuerta", "general_business"], default=None,
+                         help="Business mode only — restrict to one scenario pack. "
+                              "Either pack if omitted.")
     parser.add_argument("--scenario", default=None,
                          help="Business mode only — a scenario id from scenarios.json. "
-                              "Random if omitted.")
+                              "Random (within --pack, if given) if omitted.")
     parser.add_argument("--model", default=MODEL,
                          help="Override the model (default: claude-opus-5).")
     args = parser.parse_args()
@@ -493,7 +503,7 @@ def main() -> None:
     if level not in LEVEL_RULES:
         level = "B1"
 
-    scenario = pick_scenario(args.scenario) if args.mode == "business" else None
+    scenario = pick_scenario(args.scenario, args.pack) if args.mode == "business" else None
 
     try:
         run_call(client, level, args.mode, scenario, student)

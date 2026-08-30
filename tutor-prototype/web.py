@@ -124,6 +124,9 @@ INDEX_HTML = """<!doctype html>
     </select>
 
     <div id="scenario-row" style="display:none">
+      <label for="pack">Scenario pack</label>
+      <select id="pack"></select>
+
       <label for="scenario">Scenario</label>
       <select id="scenario"></select>
     </div>
@@ -185,16 +188,32 @@ function bubble(who, text) {
   log.scrollTop = log.scrollHeight;
 }
 
-fetch('/scenarios.json').then((r) => r.json()).then((data) => {
-  scenarios = data;
+function populateScenarios() {
+  const packId = $('pack').value;
+  const pack = scenarios.business_packs.find((p) => p.id === packId);
   const sel = $('scenario');
-  scenarios.business.forEach((s) => {
+  sel.innerHTML = '';
+  (pack ? pack.scenarios : []).forEach((s) => {
     const opt = document.createElement('option');
     opt.value = s.id;
     opt.textContent = `${s.title} (${s.cefr})`;
     sel.appendChild(opt);
   });
+}
+
+fetch('/scenarios.json').then((r) => r.json()).then((data) => {
+  scenarios = data;
+  const packSel = $('pack');
+  scenarios.business_packs.forEach((p) => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.label;
+    packSel.appendChild(opt);
+  });
+  populateScenarios();
 });
+
+$('pack').onchange = populateScenarios;
 
 $('mode').onchange = () => {
   $('scenario-row').style.display = $('mode').value === 'business' ? 'block' : 'none';
@@ -209,6 +228,7 @@ $('start-btn').onclick = async () => {
       student: $('student').value || 'demo',
       mode,
       level: $('level').value,
+      pack: mode === 'business' ? $('pack').value : null,
       scenario_id: mode === 'business' ? $('scenario').value : null,
     });
     $('chat-log').innerHTML = '';
@@ -336,7 +356,10 @@ class Handler(BaseHTTPRequestHandler):
         if level not in tutor.LEVEL_RULES:
             level = "B1"
 
-        scenario = tutor.pick_scenario(data.get("scenario_id")) if mode == "business" else None
+        scenario = (
+            tutor.pick_scenario(data.get("scenario_id"), data.get("pack"))
+            if mode == "business" else None
+        )
 
         system = tutor.build_system_prompt(level, mode, scenario, student)
         messages = [{"role": "user", "content": "(the call has just connected — open it)"}]
