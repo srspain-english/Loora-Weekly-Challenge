@@ -112,7 +112,7 @@ INDEX_HTML = """<!doctype html>
     <label for="mode">Mode</label>
     <select id="mode">
       <option value="free">Free Conversation</option>
-      <option value="business">Business English — Abadía Retuerta</option>
+      <option value="business">Business English</option>
     </select>
 
     <label for="level">Level</label>
