@@ -46,6 +46,7 @@ STUDENTS_DIR = BASE_DIR / "data" / "students"
 CEFR_GRAMMAR_QUEUE: dict[str, list[str]] = {
     "A2": [
         "past simple (regular and irregular verbs)",
+        "past continuous for interrupted actions and background scene-setting",
         "comparatives and superlatives",
         "going to and will for future plans",
         "present continuous for future arrangements",
@@ -53,6 +54,7 @@ CEFR_GRAMMAR_QUEUE: dict[str, list[str]] = {
         "can / could for ability and polite requests",
     ],
     "B1": [
+        "zero conditional for facts and routines",
         "present perfect simple: experience with ever / never",
         "present perfect simple: since vs for",
         "present perfect vs past simple",
@@ -64,17 +66,23 @@ CEFR_GRAMMAR_QUEUE: dict[str, list[str]] = {
     "B2": [
         "present perfect continuous",
         "second conditional",
+        "conditional sequencing in professional contexts (if we do X, we'll need Y unless Z)",
         "modals of deduction: must / might / can't have",
         "reported speech",
         "passive voice across tenses",
+        "causative structures: have / get something done",
         "phrasal verbs: separable and inseparable",
     ],
     "C1": [
         "third conditional and mixed conditionals",
         "inversion for emphasis",
+        "fronting objects and adverbials for emphasis",
         "advanced discourse markers and linking",
         "cleft sentences for emphasis",
+        "modal verbs across the certainty spectrum (must / will / should / may / might / could)",
         "nuanced modality: would rather / I'd sooner",
+        "advanced concession and contrast markers (notwithstanding, whereas, while X, Y)",
+        "persuasive parallel structures for high-stakes communication (not only... but also; X, which would otherwise...)",
         "register control and idiomatic collocation",
     ],
 }
