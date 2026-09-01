@@ -35,6 +35,7 @@ import secrets
 import sys
 import threading
 import webbrowser
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import anthropic
@@ -47,6 +48,8 @@ PORT = int(os.environ.get("PORT", 8765))
 ACCESS_PASSPHRASE = os.environ.get("JUNO_ACCESS_PASSPHRASE", "")
 MAX_MESSAGES_PER_CALL = 40
 MAX_CALLS_PER_SESSION = 8
+MAX_FEEDBACK_LENGTH = 2000
+FEEDBACK_PATH = tutor.BASE_DIR / "data" / "feedback.jsonl"
 
 # Per-browser-session state, keyed by a random cookie value. Necessary as
 # soon as more than one person can reach this server at once - a single
@@ -79,10 +82,11 @@ INDEX_HTML = """<!doctype html>
   .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}
   label{display:block;font-size:12.5px;color:var(--muted);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em}
   label:first-child{margin-top:0}
-  input[type=text], input[type=password], select{
+  input[type=text], input[type=password], select, textarea{
     width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;
     font-family:inherit;font-size:14px;background:var(--bg);color:var(--ink);
   }
+  textarea{resize:vertical}
   button{
     font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14px;cursor:pointer;
     border:none;border-radius:999px;padding:11px 20px;background:var(--accent);color:#fff;
@@ -121,6 +125,9 @@ INDEX_HTML = """<!doctype html>
   .recap td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:top}
   .recap ul{margin:4px 0;padding-left:20px;font-size:13.8px}
   .tag{font-size:10px;text-transform:uppercase;color:var(--muted);font-family:ui-monospace,monospace}
+  #feedback-btn{margin-left:auto;padding:6px 14px;font-size:12px}
+  #feedback-panel{margin-bottom:18px}
+  #feedback-thanks{color:var(--muted);font-size:13px;margin-top:8px}
   @media (prefers-color-scheme: dark){
     :root{
       --bg:#161310; --bg-sunk:#1E1A15; --card:#211D18;
@@ -133,8 +140,22 @@ INDEX_HTML = """<!doctype html>
 </head>
 <body>
 <div class="wrap">
-  <div class="brand"><span class="brand-mark">Juno</span><span class="brand-sub">Teaching Assistant</span></div>
+  <div class="brand">
+    <span class="brand-mark">Juno</span><span class="brand-sub">Teaching Assistant</span>
+    <button class="ghost" id="feedback-btn" style="display:none">Feedback</button>
+  </div>
   <p class="lede" id="lede">Loading…</p>
+
+  <div id="feedback-panel" class="panel" style="display:none">
+    <label for="feedback-text">Tell us what's working or not</label>
+    <textarea id="feedback-text" rows="3" placeholder="Anything you want Juno's teacher to know…"></textarea>
+    <div class="row" style="margin-top:12px">
+      <button id="feedback-submit">Send feedback</button>
+      <button class="ghost" id="feedback-cancel">Cancel</button>
+    </div>
+    <div class="error" id="feedback-error"></div>
+    <div id="feedback-thanks" style="display:none">Thanks — sent.</div>
+  </div>
 
   <div id="auth-screen" class="panel">
     <label for="passphrase">Access code</label>
@@ -287,6 +308,7 @@ api('/api/auth', { passphrase: '' }).then(() => {
 });
 
 function afterAuth() {
+  $('feedback-btn').style.display = 'inline-block';
   show('setup-screen');
   fetch('/scenarios.json', { credentials: 'same-origin' }).then((r) => r.json()).then((data) => {
     scenarios = data;
@@ -392,6 +414,30 @@ $('end-btn').onclick = async () => {
 };
 
 $('again-btn').onclick = () => show('setup-screen');
+
+$('feedback-btn').onclick = () => {
+  const panel = $('feedback-panel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  $('feedback-error').textContent = '';
+  $('feedback-thanks').style.display = 'none';
+};
+$('feedback-cancel').onclick = () => { $('feedback-panel').style.display = 'none'; };
+$('feedback-submit').onclick = async () => {
+  const text = $('feedback-text').value.trim();
+  $('feedback-error').textContent = '';
+  $('feedback-thanks').style.display = 'none';
+  if (!text) { $('feedback-error').textContent = 'Type something first.'; return; }
+  $('feedback-submit').disabled = true;
+  try {
+    await api('/api/feedback', { text, student: $('student').value, mode: $('mode').value });
+    $('feedback-text').value = '';
+    $('feedback-thanks').style.display = 'block';
+  } catch (e) {
+    $('feedback-error').textContent = e.message;
+  } finally {
+    $('feedback-submit').disabled = false;
+  }
+};
 </script>
 </body>
 </html>
@@ -471,6 +517,9 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/end":
                 self._require_auth(session)
                 self._handle_end(session, data)
+            elif self.path == "/api/feedback":
+                self._require_auth(session)
+                self._handle_feedback(session, data)
             else:
                 self._send_json({"error": "not found"}, 404)
         except _AuthError:
@@ -558,6 +607,22 @@ class Handler(BaseHTTPRequestHandler):
         tutor.save_student(student)
         session["call"] = None
         self._send_json({"report": report})
+
+    def _handle_feedback(self, session: dict, data: dict) -> None:
+        text = (data.get("text") or "").strip()
+        if not text:
+            self._send_json({"error": "Feedback can't be empty."}, 400)
+            return
+        entry = {
+            "text": text[:MAX_FEEDBACK_LENGTH],
+            "student": (data.get("student") or "").strip() or None,
+            "mode": (data.get("mode") or "").strip() or None,
+            "submitted_at": datetime.now(timezone.utc).isoformat(),
+        }
+        FEEDBACK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with FEEDBACK_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+        self._send_json({"ok": True})
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002 - stdlib signature
         pass  # keep stdout quiet; errors still surface in the browser
