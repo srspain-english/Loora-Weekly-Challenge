@@ -39,7 +39,6 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import anthropic
-import requests
 
 import tutor  # the exact tested logic: prompts, tiers, report schema
 
@@ -47,7 +46,6 @@ RUNNING_DEPLOYED = bool(os.environ.get("PORT"))
 HOST = "0.0.0.0" if RUNNING_DEPLOYED else "127.0.0.1"
 PORT = int(os.environ.get("PORT", 8765))
 ACCESS_PASSPHRASE = os.environ.get("JUNO_ACCESS_PASSPHRASE", "")
-ELEVEN_LABS_API_KEY = os.environ.get("ELEVEN_LABS_API_KEY", "")
 MAX_MESSAGES_PER_CALL = 40
 MAX_CALLS_PER_SESSION = 8
 MAX_FEEDBACK_LENGTH = 2000
@@ -286,27 +284,16 @@ function pickVoice(voices) {
   return voices.find((v) => v.lang && v.lang.startsWith('en')) || null;
 }
 
-async function speak(text) {
-  if (!$('speak-toggle').checked) return;
-  try {
-    const res = await fetch('/api/speak', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text }),
-      credentials: 'same-origin',
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      console.error('TTS error:', err.error);
-      return;
-    }
-    const audioBlob = await res.blob();
-    const audioUrl = URL.createObjectURL(audioBlob);
-    const audio = new Audio(audioUrl);
-    audio.play();
-  } catch (err) {
-    console.error('Failed to play audio:', err);
-  }
+function speak(text) {
+  if (!$('speak-toggle').checked || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'en-US';
+  u.rate = 1;
+  u.pitch = 1;
+  const voice = pickVoice(cachedVoices.length ? cachedVoices : window.speechSynthesis.getVoices());
+  if (voice) u.voice = voice;
+  window.speechSynthesis.speak(u);
 }
 
 function setupVoiceInput() {
@@ -565,9 +552,6 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/feedback":
                 self._require_auth(session)
                 self._handle_feedback(session, data)
-            elif self.path == "/api/speak":
-                self._require_auth(session)
-                self._handle_speak(data)
             else:
                 self._send_json({"error": "not found"}, 404)
         except _AuthError:
@@ -671,40 +655,6 @@ class Handler(BaseHTTPRequestHandler):
         with FEEDBACK_PATH.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
         self._send_json({"ok": True})
-
-    def _handle_speak(self, data: dict) -> None:
-        if not ELEVEN_LABS_API_KEY:
-            self._send_json({"error": "TTS not configured. Set ELEVEN_LABS_API_KEY."}, 500)
-            return
-        text = (data.get("text") or "").strip()
-        if not text:
-            self._send_json({"error": "Text cannot be empty."}, 400)
-            return
-
-        voice_id = "EXAVITQu4vr4xnSDxMaL"  # Bella - natural, conversational voice
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-        headers = {
-            "xi-api-key": ELEVEN_LABS_API_KEY,
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "text": text,
-            "model_id": "eleven_multilingual_v2",
-            "voice_settings": {
-                "stability": 0.6,
-                "similarity_boost": 0.85,
-            },
-        }
-
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=10)
-            if response.status_code != 200:
-                error_msg = response.text or f"HTTP {response.status_code}"
-                self._send_json({"error": f"TTS failed: {error_msg}"}, 500)
-                return
-            self._send_bytes(response.content, "audio/mpeg")
-        except requests.exceptions.RequestException as e:
-            self._send_json({"error": f"TTS request failed: {str(e)}"}, 500)
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002 - stdlib signature
         pass  # keep stdout quiet; errors still surface in the browser
