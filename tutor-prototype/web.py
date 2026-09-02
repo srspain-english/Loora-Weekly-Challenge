@@ -252,15 +252,47 @@ function bubble(who, text) {
   log.scrollTop = log.scrollHeight;
 }
 
+// Named voices known to sound natural rather than robotic, checked in order.
+// Covers Chrome/Edge (cloud voices) and Safari/macOS (Enhanced/Premium voices).
+const PREFERRED_VOICE_NAMES = [
+  'Google US English',
+  'Samantha',
+  'Ava',
+  'Microsoft Aria Online (Natural) - English (United States)',
+  'Microsoft Jenny Online (Natural) - English (United States)',
+];
+
+let cachedVoices = [];
+function refreshVoices() { cachedVoices = window.speechSynthesis.getVoices(); }
+if (window.speechSynthesis) {
+  refreshVoices();
+  // Chrome loads voices asynchronously - the list above is often empty
+  // until this fires, which is why the very first reply can sound worse
+  // than later ones if we don't wait for it.
+  window.speechSynthesis.onvoiceschanged = refreshVoices;
+}
+
+function pickVoice(voices) {
+  for (const name of PREFERRED_VOICE_NAMES) {
+    const match = voices.find((v) => v.name === name);
+    if (match) return match;
+  }
+  const enhanced = voices.find((v) => v.lang && v.lang.startsWith('en') && /enhanced|premium|natural/i.test(v.name));
+  if (enhanced) return enhanced;
+  const cloud = voices.find((v) => v.lang && v.lang.startsWith('en') && v.localService === false);
+  if (cloud) return cloud;
+  return voices.find((v) => v.lang && v.lang.startsWith('en')) || null;
+}
+
 function speak(text) {
   if (!$('speak-toggle').checked || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'en-US';
-  u.rate = 0.98;
-  const voices = window.speechSynthesis.getVoices();
-  const en = voices.find((v) => v.lang && v.lang.startsWith('en'));
-  if (en) u.voice = en;
+  u.rate = 1;
+  u.pitch = 1;
+  const voice = pickVoice(cachedVoices.length ? cachedVoices : window.speechSynthesis.getVoices());
+  if (voice) u.voice = voice;
   window.speechSynthesis.speak(u);
 }
 
