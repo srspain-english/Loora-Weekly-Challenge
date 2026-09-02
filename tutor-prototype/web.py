@@ -145,6 +145,8 @@ INDEX_HTML = """<!doctype html>
   }
   .voice-row{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--muted)}
   .voice-row label{margin:0;text-transform:none;letter-spacing:0;display:flex;align-items:center;gap:6px;cursor:pointer}
+  #voice-source{font-size:11.5px;opacity:.75}
+  #voice-source:empty{display:none}
   .recap h3{font-family:'Space Grotesk',sans-serif;font-size:14px;margin:20px 0 8px;color:var(--ink)}
   .recap h3:first-child{margin-top:0}
   .recap table{width:100%;border-collapse:collapse;font-size:13.5px}
@@ -229,6 +231,7 @@ INDEX_HTML = """<!doctype html>
     </div>
     <div class="voice-row">
       <label><input type="checkbox" id="speak-toggle" checked> Juno speaks replies aloud</label>
+      <span id="voice-source" title="Which engine spoke the last reply"></span>
     </div>
     <div class="row" style="margin-top:12px;justify-content:flex-end">
       <button class="ghost" id="end-btn">End call</button>
@@ -335,6 +338,17 @@ function pickVoice(voices) {
   return voices.find(isUsableVoice) || null;
 }
 
+// Which engine actually spoke, shown next to the toggle. Both engines are
+// meant to work, so this isn't an error display - it's the only way to tell
+// them apart without opening devtools, and it's how you notice the server
+// voice quietly stopping (an exhausted quota looks and sounds like nothing
+// at all otherwise).
+function showVoiceSource(label, detail) {
+  const el = $('voice-source');
+  if (!el) return;
+  el.textContent = detail ? `· ${label} (${detail})` : `· ${label}`;
+}
+
 // Fallback for when the server has no ElevenLabs key, or the call to it
 // fails. Voice quality here depends entirely on the student's own operating
 // system - good on a Mac, robotic on most Windows machines - which is the
@@ -370,7 +384,10 @@ async function speak(text) {
     if (!res.ok) {
       // 503 means the server has no key configured - expected, not an error
       // worth shouting about. Anything else is worth seeing in the console.
-      if (res.status !== 503) {
+      if (res.status === 503) {
+        showVoiceSource('browser voice', 'no server voice key');
+      } else {
+        showVoiceSource('browser voice', `server voice failed: ${res.status}`);
         console.warn('Server voice unavailable, using the browser voice instead.');
       }
       speakWithBrowser(text);
@@ -380,8 +397,10 @@ async function speak(text) {
     currentAudio = audio;
     audio.onended = () => { if (currentAudio === audio) currentAudio = null; };
     await audio.play();
+    showVoiceSource('ElevenLabs voice');
   } catch (err) {
     console.warn('Server voice failed, using the browser voice instead.', err);
+    showVoiceSource('browser voice', 'server voice failed');
     speakWithBrowser(text);
   }
 }

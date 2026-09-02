@@ -130,6 +130,15 @@ class SpeakEndpointTest(unittest.TestCase):
         self.assertIn("/api/speak", html)
         self.assertIn("speakWithBrowser", html)
 
+    def test_page_shows_which_voice_engine_was_used(self) -> None:
+        # Without this the two engines are indistinguishable to anyone not
+        # reading devtools, which is how a silently exhausted quota goes
+        # unnoticed.
+        with urllib.request.urlopen(f"{self.base_url}/") as resp:
+            html = resp.read().decode("utf-8")
+        self.assertIn('id="voice-source"', html)
+        self.assertIn("showVoiceSource", html)
+
 
 class SynthesizeSpeechTest(unittest.TestCase):
     """The ElevenLabs call itself: caching, and turning every failure into
