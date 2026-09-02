@@ -209,6 +209,426 @@
           "closing_instruction": "give me feedback at the end"
         }
       ]
+    },
+    {
+      "id": "sales_client",
+      "label": "Sales & Client Relations",
+      "scenarios": [
+        {
+          "id": "look_forward",
+          "title": "Looking Forward to It",
+          "expression": "to look forward to",
+          "cefr": "A2",
+          "role": "a new client I have just met at a trade fair",
+          "domain": "how I close a first conversation with a client and arrange what happens next",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "get_back_to",
+          "title": "I'll Get Back to You",
+          "expression": "to get back to someone",
+          "cefr": "A2",
+          "role": "a client asking me a question I cannot answer yet",
+          "domain": "how I promise to come back with an answer, and by when",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "win_over",
+          "title": "Winning a Client Over",
+          "expression": "to win someone over",
+          "cefr": "B1",
+          "role": "a sceptical client who currently uses a competitor",
+          "domain": "how I persuade a client to try us without overpromising",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "follow_up",
+          "title": "Following Up Without Nagging",
+          "expression": "to follow up on",
+          "cefr": "B1",
+          "role": "a client who has gone quiet after receiving my proposal",
+          "domain": "how I chase a decision politely and keep the relationship warm",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "meet_halfway",
+          "title": "Meeting Them Halfway",
+          "expression": "to meet someone halfway",
+          "cefr": "B1",
+          "role": "a client pushing hard for a discount I cannot fully give",
+          "domain": "how I find a middle point on price, scope or timing",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "close_deal",
+          "title": "Closing the Deal",
+          "expression": "to close a deal",
+          "cefr": "B2",
+          "role": "a client who is nearly convinced but still hesitating",
+          "domain": "how I move a conversation from interest to a signed agreement",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "hard_bargain",
+          "title": "Driving a Hard Bargain",
+          "expression": "to drive a hard bargain",
+          "cefr": "B2",
+          "role": "a demanding buyer negotiating terms with me",
+          "domain": "how I hold my position on price while keeping the tone constructive",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "value_for_money",
+          "title": "Making the Case for Value",
+          "expression": "value for money",
+          "cefr": "B2",
+          "role": "a client who says our offer is more expensive than the alternatives",
+          "domain": "how I justify a higher price by what the client actually gets",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "foot_in_door",
+          "title": "Getting a Foot in the Door",
+          "expression": "to get a foot in the door",
+          "cefr": "C1",
+          "role": "a senior decision-maker at a company I have never sold to",
+          "domain": "how I open a relationship with a large account starting from something small",
+          "correction_instruction": "correct my English throughout, including register and word choice",
+          "push_instruction": "push me to use precise, nuanced language rather than simple restatements",
+          "closing_instruction": "give me feedback at the end"
+        }
+      ]
+    },
+    {
+      "id": "meetings_presentations",
+      "label": "Meetings & Presentations",
+      "scenarios": [
+        {
+          "id": "speak_up",
+          "title": "Speaking Up in the Room",
+          "expression": "to speak up",
+          "cefr": "A2",
+          "role": "a colleague chairing our weekly team meeting",
+          "domain": "how I take my turn in a meeting where others talk more than I do",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "go_over",
+          "title": "Going Over the Numbers",
+          "expression": "to go over something",
+          "cefr": "A2",
+          "role": "a colleague reviewing last month's figures with me",
+          "domain": "how I walk someone through information step by step",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "bring_up",
+          "title": "Bringing Up a Difficult Point",
+          "expression": "to bring something up",
+          "cefr": "B1",
+          "role": "my line manager in a team meeting",
+          "domain": "how I raise an awkward issue in front of other people",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "run_by",
+          "title": "Running It By You First",
+          "expression": "to run something by someone",
+          "cefr": "B1",
+          "role": "a colleague whose opinion I want before a decision is final",
+          "domain": "how I test an idea with someone before presenting it more widely",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "wrap_up",
+          "title": "Wrapping Up on Time",
+          "expression": "to wrap up",
+          "cefr": "B1",
+          "role": "a colleague in a meeting that is running over its time",
+          "domain": "how I close a discussion, summarise it and agree the next steps",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "devils_advocate",
+          "title": "Playing Devil's Advocate",
+          "expression": "to play devil's advocate",
+          "cefr": "B2",
+          "role": "a colleague who is challenging a proposal on purpose",
+          "domain": "how I argue against an idea to test it, without attacking the person",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "get_to_point",
+          "title": "Getting to the Point",
+          "expression": "to get to the point",
+          "cefr": "B2",
+          "role": "a senior manager with very little time for my update",
+          "domain": "how I give the essential message first and the detail afterwards",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "on_the_agenda",
+          "title": "Putting It on the Agenda",
+          "expression": "to put something on the agenda",
+          "cefr": "B2",
+          "role": "the colleague who organises our monthly departmental meeting",
+          "domain": "how I get an issue formally discussed rather than mentioned in passing",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "cut_to_chase",
+          "title": "Cutting to the Chase",
+          "expression": "to cut to the chase",
+          "cefr": "C1",
+          "role": "an executive board member questioning my presentation",
+          "domain": "how I handle pressure to be brief when the subject is genuinely complex",
+          "correction_instruction": "correct my English throughout, including register and word choice",
+          "push_instruction": "push me to use precise, nuanced language rather than simple restatements",
+          "closing_instruction": "give me feedback at the end"
+        }
+      ]
+    },
+    {
+      "id": "hr_people",
+      "label": "HR & People",
+      "scenarios": [
+        {
+          "id": "fit_in",
+          "title": "Fitting In With the Team",
+          "expression": "to fit in",
+          "cefr": "A2",
+          "role": "a colleague showing me around during my first week",
+          "domain": "how I talk about settling into a new workplace and its habits",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "take_on",
+          "title": "Taking On More Work",
+          "expression": "to take on",
+          "cefr": "A2",
+          "role": "my line manager asking whether I have capacity",
+          "domain": "how I accept or decline extra work clearly and politely",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "step_up",
+          "title": "Stepping Up",
+          "expression": "to step up",
+          "cefr": "B1",
+          "role": "my manager discussing a colleague's sudden absence",
+          "domain": "how I offer to cover responsibilities beyond my usual role",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "burn_out",
+          "title": "Talking About Burnout",
+          "expression": "to burn out",
+          "cefr": "B1",
+          "role": "my manager in a one-to-one about my workload",
+          "domain": "how I say that the pace is unsustainable before it becomes a crisis",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "stand_out",
+          "title": "Standing Out in an Interview",
+          "expression": "to stand out",
+          "cefr": "B1",
+          "role": "an HR manager interviewing me for a role I want",
+          "domain": "how I describe what makes me different from other candidates",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "let_go",
+          "title": "When Someone Is Let Go",
+          "expression": "to let someone go",
+          "cefr": "B2",
+          "role": "an HR colleague discussing a difficult staffing decision",
+          "domain": "how English softens hard news about employment, and when that helps or hides",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "raise_concern",
+          "title": "Raising a Concern",
+          "expression": "to raise a concern",
+          "cefr": "B2",
+          "role": "my manager, in private, about a colleague's behaviour",
+          "domain": "how I report a problem about a person factually rather than emotionally",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "eye_to_eye",
+          "title": "Not Seeing Eye to Eye",
+          "expression": "to see eye to eye",
+          "cefr": "B2",
+          "role": "a colleague I disagree with about how our team should work",
+          "domain": "how I describe a professional disagreement without making it personal",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "walk_the_talk",
+          "title": "Walking the Talk",
+          "expression": "to walk the talk",
+          "cefr": "C1",
+          "role": "a director asking me to assess our management culture honestly",
+          "domain": "how I point out a gap between what an organisation says and what it does",
+          "correction_instruction": "correct my English throughout, including register and word choice",
+          "push_instruction": "push me to use precise, nuanced language rather than simple restatements",
+          "closing_instruction": "give me feedback at the end"
+        }
+      ]
+    },
+    {
+      "id": "projects_operations",
+      "label": "Projects & Operations",
+      "scenarios": [
+        {
+          "id": "carry_out",
+          "title": "Carrying Out the Plan",
+          "expression": "to carry out",
+          "cefr": "A2",
+          "role": "the colleague who assigns my tasks each week",
+          "domain": "how I describe the work I have done and the work still to do",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "run_out_of",
+          "title": "Running Out of Time",
+          "expression": "to run out of",
+          "cefr": "A2",
+          "role": "a colleague checking how our shared task is going",
+          "domain": "how I report that time, stock or budget is nearly gone",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "fall_behind",
+          "title": "Falling Behind Schedule",
+          "expression": "to fall behind",
+          "cefr": "B1",
+          "role": "the project manager I report to",
+          "domain": "how I admit a delay early and explain what caused it",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "catch_up",
+          "title": "Catching Up After a Delay",
+          "expression": "to catch up",
+          "cefr": "B1",
+          "role": "a colleague helping me recover a late piece of work",
+          "domain": "how I set out a realistic plan to get back on schedule",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "sort_out",
+          "title": "Sorting Out a Problem",
+          "expression": "to sort something out",
+          "cefr": "B1",
+          "role": "a colleague from another department affected by an error we made",
+          "domain": "how I take responsibility for a problem and say how I will fix it",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "cut_corners",
+          "title": "Cutting Corners",
+          "expression": "to cut corners",
+          "cefr": "B2",
+          "role": "my manager pushing for a faster delivery than I think is safe",
+          "domain": "how I refuse to lower standards while still offering a way forward",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "bottleneck",
+          "title": "Finding the Bottleneck",
+          "expression": "a bottleneck",
+          "cefr": "B2",
+          "role": "a colleague reviewing why our process keeps slowing down",
+          "domain": "how I identify where work gets stuck and argue for a change",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "drawing_board",
+          "title": "Back to the Drawing Board",
+          "expression": "back to the drawing board",
+          "cefr": "B2",
+          "role": "a colleague whose approach has just failed a test",
+          "domain": "how I say an approach has not worked without blaming anyone",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "firefighting",
+          "title": "Always Firefighting",
+          "expression": "to be firefighting",
+          "cefr": "C1",
+          "role": "a director asking why my team never gets to long-term work",
+          "domain": "how I explain that constant urgent problems are a symptom, not the cause",
+          "correction_instruction": "correct my English throughout, including register and word choice",
+          "push_instruction": "push me to use precise, nuanced language rather than simple restatements",
+          "closing_instruction": "give me feedback at the end"
+        }
+      ]
     }
   ],
   "fluency_techniques": [

@@ -45,14 +45,28 @@ to the terminal and gets written back into that student's memory file.
   the mic button to speak (Chrome/Brave/Edge — Safari doesn't support the
   browser speech API this uses), and Juno's replies are read aloud by
   default.
-- `scenarios.json` — two Business English scenario packs a student picks
-  between: **Abadía Retuerta**, the nine role-plays reformatted from the real
-  weekly scripts (`Loora_Abadia_Week4_Business_Fluency.html` in the repo
-  root) into the template from Playbook §04; and **General Business
-  English**, nine original scenarios covering common workplace idioms
-  (touch base, push back, circle back, and so on) for students outside
-  hospitality. Plus the three fluency-push techniques used during the
-  wind-down.
+- `scenarios.json` — six Business English scenario packs, nine role-plays
+  each (54 in total), each built on one target expression:
+  - **Abadía Retuerta — Hospitality**, reformatted from the real weekly
+    scripts (`Loora_Abadia_Week4_Business_Fluency.html` in the repo root)
+    into the template from Playbook §04.
+  - **General Business English** — common workplace idioms (touch base,
+    push back, circle back) for students outside hospitality.
+  - **Sales & Client Relations** — winning clients over, following up,
+    negotiating price, closing.
+  - **Meetings & Presentations** — speaking up, raising a point, getting to
+    the point under time pressure.
+  - **HR & People** — interviews, workload, disagreement, difficult news.
+  - **Projects & Operations** — delays, bottlenecks, owning a mistake,
+    refusing to cut corners.
+
+  Plus the three fluency-push techniques used during the wind-down.
+
+  Adding a sector is data, not code: append a pack to `business_packs` and
+  it appears in the CLI's `--pack` and in the web selector automatically.
+  `tests/test_scenarios.py` enforces what the rest of the code assumes —
+  globally unique scenario ids, every field filled, CEFR levels the prompt
+  builder actually knows.
 - `data/students/*.json` — student memory records. `alex.json` is a
   synthetic demo profile — deliberately not modeled on a real S&R student,
   since real student data lives in your Drive, not in this repo.

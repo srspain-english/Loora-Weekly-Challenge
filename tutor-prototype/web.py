@@ -371,13 +371,23 @@ function afterAuth() {
     scenarios = data;
     if (!scenarios.business_packs) throw new Error('scenarios.json is an old version.');
     const sel = $('scenario');
+    // Grouped by sector, and each group opens with its own "surprise me" -
+    // a flat list of every scenario across every pack is unusable once there
+    // are more than a couple of packs, and hides which sector a title is from.
     scenarios.business_packs.forEach((p) => {
+      const group = document.createElement('optgroup');
+      group.label = p.label;
+      const anyInPack = document.createElement('option');
+      anyInPack.value = `pack:${p.id}`;
+      anyInPack.textContent = `Surprise me — ${p.label}`;
+      group.appendChild(anyInPack);
       p.scenarios.forEach((s) => {
         const opt = document.createElement('option');
         opt.value = s.id;
-        opt.textContent = `${s.title} (${s.cefr})`;
-        sel.appendChild(opt);
+        opt.textContent = `${s.title} — ${s.expression} (${s.cefr})`;
+        group.appendChild(opt);
       });
+      sel.appendChild(group);
     });
   }).catch((e) => { $('start-error').textContent = 'Could not load scenarios: ' + e.message; });
   setupVoiceInput();
@@ -402,11 +412,15 @@ $('start-btn').onclick = async () => {
   $('start-btn').disabled = true;
   try {
     const mode = $('mode').value;
+    // "pack:<id>" means any scenario from that sector; a bare value is one
+    // specific scenario. Empty is any scenario from any pack.
+    const choice = mode === 'business' ? $('scenario').value : '';
     const data = await api('/api/start', {
       student: $('student').value || 'demo',
       mode,
       level: $('level').value,
-      scenario_id: mode === 'business' ? ($('scenario').value || null) : null,
+      scenario_id: choice.startsWith('pack:') ? null : (choice || null),
+      pack: choice.startsWith('pack:') ? choice.slice(5) : null,
     });
     $('chat-log').innerHTML = '';
     bubble('juno', data.reply);
@@ -581,6 +595,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": "not found"}, 404)
         except _AuthError:
             self._send_json({"error": "Not authenticated."}, 401)
+        except tutor.UnknownScenario as e:
+            # Bad input from the page, not a server fault - usually a stale
+            # tab holding scenario ids from an older scenarios.json.
+            self._send_json({"error": str(e)}, 400)
         except Exception as e:  # noqa: BLE001 - surface any failure to the browser
             self._send_json({"error": str(e)}, 500)
 

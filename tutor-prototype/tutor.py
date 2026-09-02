@@ -413,20 +413,30 @@ def save_student(student: dict) -> None:
     path.write_text(json.dumps(student, indent=2))
 
 
+class UnknownScenario(ValueError):
+    """An unrecognised pack or scenario id.
+
+    A plain exception rather than sys.exit() because web.py calls this on a
+    request thread: SystemExit inherits from BaseException, so its `except
+    Exception` would not catch it, and the request would die without ever
+    answering the browser. The CLI turns this back into an exit below.
+    """
+
+
 def pick_scenario(scenario_id: str | None, pack: str | None = None) -> dict:
     packs = json.loads(SCENARIOS_PATH.read_text())["business_packs"]
     if pack:
         matching_packs = [p for p in packs if p["id"] == pack]
         if not matching_packs:
             pack_ids = ", ".join(p["id"] for p in packs)
-            sys.exit(f"Unknown pack '{pack}'. Available: {pack_ids}")
+            raise UnknownScenario(f"Unknown pack '{pack}'. Available: {pack_ids}")
         packs = matching_packs
     library = [s for p in packs for s in p["scenarios"]]
     if scenario_id:
         match = next((s for s in library if s["id"] == scenario_id), None)
         if not match:
             ids = ", ".join(s["id"] for s in library)
-            sys.exit(f"Unknown scenario '{scenario_id}'. Available: {ids}")
+            raise UnknownScenario(f"Unknown scenario '{scenario_id}'. Available: {ids}")
         return match
     return random.choice(library)
 
@@ -607,7 +617,10 @@ def main() -> None:
     if level not in LEVEL_RULES:
         level = "B1"
 
-    scenario = pick_scenario(args.scenario, args.pack) if args.mode == "business" else None
+    try:
+        scenario = pick_scenario(args.scenario, args.pack) if args.mode == "business" else None
+    except UnknownScenario as e:
+        sys.exit(str(e))  # same message and exit behaviour as before
 
     try:
         run_call(client, level, args.mode, scenario, student)
