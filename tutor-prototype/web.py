@@ -16,11 +16,6 @@ Deployed use (e.g. Render): set environment variables
     ANTHROPIC_API_KEY        - required
     JUNO_ACCESS_PASSPHRASE   - required once this is reachable by anyone
                                 other than you; gates every call
-    ELEVENLABS_API_KEY       - optional; gives every student the same good
-                                voice instead of whatever their own OS
-                                ships. Without it the browser's engine is
-                                used, which it also falls back to whenever
-                                ElevenLabs fails. Billed per character.
     PORT                     - set automatically by most hosts
 When PORT is set in the environment, this binds to 0.0.0.0 instead of
 127.0.0.1 (loopback-only) and skips auto-opening a browser, since that
@@ -39,10 +34,7 @@ import os
 import secrets
 import sys
 import threading
-import urllib.error
-import urllib.request
 import webbrowser
-from collections import OrderedDict
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -58,24 +50,6 @@ MAX_MESSAGES_PER_CALL = 40
 MAX_CALLS_PER_SESSION = 8
 MAX_FEEDBACK_LENGTH = 2000
 FEEDBACK_PATH = tutor.BASE_DIR / "data" / "feedback.jsonl"
-
-# --- Server-side voice (ElevenLabs) ------------------------------------
-# Optional. Without a key the browser falls back to its own speech engine,
-# whose quality depends on the student's operating system - the point of
-# paying for this is that every student hears the same good voice.
-ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
-ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # Bella
-ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_multilingual_v2")
-MAX_SPEAK_LENGTH = 1500  # a hard stop on characters billed per single reply
-
-# Juno repeats itself a lot across calls - greetings, prompts, encouragement.
-# Caching the synthesised audio keeps the character quota going much further,
-# since the free tier is small enough that a couple of students burn through
-# it in one session. Keyed by the exact text, capped so memory can't grow
-# without bound on a small Render instance.
-_TTS_CACHE: OrderedDict[str, bytes] = OrderedDict()
-_TTS_CACHE_MAX_ENTRIES = 200
-_TTS_CACHE_LOCK = threading.Lock()
 
 # Per-browser-session state, keyed by a random cookie value. Necessary as
 # soon as more than one person can reach this server at once - a single
@@ -145,8 +119,6 @@ INDEX_HTML = """<!doctype html>
   }
   .voice-row{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--muted)}
   .voice-row label{margin:0;text-transform:none;letter-spacing:0;display:flex;align-items:center;gap:6px;cursor:pointer}
-  #voice-source{font-size:11.5px;opacity:.75}
-  #voice-source:empty{display:none}
   .recap h3{font-family:'Space Grotesk',sans-serif;font-size:14px;margin:20px 0 8px;color:var(--ink)}
   .recap h3:first-child{margin-top:0}
   .recap table{width:100%;border-collapse:collapse;font-size:13.5px}
@@ -231,7 +203,6 @@ INDEX_HTML = """<!doctype html>
     </div>
     <div class="voice-row">
       <label><input type="checkbox" id="speak-toggle" checked> Juno speaks replies aloud</label>
-      <span id="voice-source" title="Which engine spoke the last reply"></span>
     </div>
     <div class="row" style="margin-top:12px;justify-content:flex-end">
       <button class="ghost" id="end-btn">End call</button>
@@ -338,23 +309,8 @@ function pickVoice(voices) {
   return voices.find(isUsableVoice) || null;
 }
 
-// Which engine actually spoke, shown next to the toggle. Both engines are
-// meant to work, so this isn't an error display - it's the only way to tell
-// them apart without opening devtools, and it's how you notice the server
-// voice quietly stopping (an exhausted quota looks and sounds like nothing
-// at all otherwise).
-function showVoiceSource(label, detail) {
-  const el = $('voice-source');
-  if (!el) return;
-  el.textContent = detail ? `· ${label} (${detail})` : `· ${label}`;
-}
-
-// Fallback for when the server has no ElevenLabs key, or the call to it
-// fails. Voice quality here depends entirely on the student's own operating
-// system - good on a Mac, robotic on most Windows machines - which is the
-// whole reason the server-side voice exists.
-function speakWithBrowser(text) {
-  if (!window.speechSynthesis) return;
+function speak(text) {
+  if (!$('speak-toggle').checked || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'en-US';
@@ -363,46 +319,6 @@ function speakWithBrowser(text) {
   const voice = pickVoice(cachedVoices.length ? cachedVoices : window.speechSynthesis.getVoices());
   if (voice) u.voice = voice;
   window.speechSynthesis.speak(u);
-}
-
-let currentAudio = null;
-
-async function speak(text) {
-  if (!$('speak-toggle').checked) return;
-
-  // Stop whatever is still playing from the previous reply, in both engines.
-  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-  if (window.speechSynthesis) window.speechSynthesis.cancel();
-
-  try {
-    const res = await fetch('/api/speak', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text }),
-      credentials: 'same-origin',
-    });
-    if (!res.ok) {
-      // 503 means the server has no key configured - expected, not an error
-      // worth shouting about. Anything else is worth seeing in the console.
-      if (res.status === 503) {
-        showVoiceSource('browser voice', 'no server voice key');
-      } else {
-        showVoiceSource('browser voice', `server voice failed: ${res.status}`);
-        console.warn('Server voice unavailable, using the browser voice instead.');
-      }
-      speakWithBrowser(text);
-      return;
-    }
-    const audio = new Audio(URL.createObjectURL(await res.blob()));
-    currentAudio = audio;
-    audio.onended = () => { if (currentAudio === audio) currentAudio = null; };
-    await audio.play();
-    showVoiceSource('ElevenLabs voice');
-  } catch (err) {
-    console.warn('Server voice failed, using the browser voice instead.', err);
-    showVoiceSource('browser voice', 'server voice failed');
-    speakWithBrowser(text);
-  }
 }
 
 function setupVoiceInput() {
@@ -587,58 +503,6 @@ $('feedback-submit').onclick = async () => {
 client = anthropic.Anthropic()
 
 
-class TTSError(Exception):
-    """ElevenLabs refused or could not be reached. Callers fall back to the
-    browser's own voice rather than leaving the student with silence."""
-
-
-def synthesize_speech(text: str) -> bytes:
-    """Return MP3 audio for `text`, from cache when we've said it before.
-
-    Raises TTSError on any failure; never raises anything else, so a bad key
-    or a dropped connection can't take a reply down with it.
-    """
-    with _TTS_CACHE_LOCK:
-        cached = _TTS_CACHE.get(text)
-        if cached is not None:
-            _TTS_CACHE.move_to_end(text)  # keep hot phrases from being evicted
-            return cached
-
-    request = urllib.request.Request(
-        f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
-        data=json.dumps(
-            {
-                "text": text,
-                "model_id": ELEVENLABS_MODEL,
-                "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
-            }
-        ).encode("utf-8"),
-        headers={
-            "xi-api-key": ELEVENLABS_API_KEY,
-            "Content-Type": "application/json",
-            "Accept": "audio/mpeg",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            audio = response.read()
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", "replace")[:200]
-        raise TTSError(f"ElevenLabs returned {e.code}: {detail}") from e
-    except Exception as e:  # noqa: BLE001 - network, DNS, timeout, anything
-        raise TTSError(f"Could not reach ElevenLabs: {e}") from e
-
-    if not audio:
-        raise TTSError("ElevenLabs returned an empty response.")
-
-    with _TTS_CACHE_LOCK:
-        _TTS_CACHE[text] = audio
-        while len(_TTS_CACHE) > _TTS_CACHE_MAX_ENTRIES:
-            _TTS_CACHE.popitem(last=False)
-    return audio
-
-
 class Handler(BaseHTTPRequestHandler):
     def _load_session(self) -> dict:
         cookies = http.cookies.SimpleCookie()
@@ -713,9 +577,6 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/feedback":
                 self._require_auth(session)
                 self._handle_feedback(session, data)
-            elif self.path == "/api/speak":
-                self._require_auth(session)
-                self._handle_speak(data)
             else:
                 self._send_json({"error": "not found"}, 404)
         except _AuthError:
@@ -819,24 +680,6 @@ class Handler(BaseHTTPRequestHandler):
         with FEEDBACK_PATH.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
         self._send_json({"ok": True})
-
-    def _handle_speak(self, data: dict) -> None:
-        # Every failure here answers with a status the page treats as "use the
-        # browser voice instead", so a voice problem never costs a reply.
-        if not ELEVENLABS_API_KEY:
-            self._send_json({"error": "Server voice not configured."}, 503)
-            return
-        text = (data.get("text") or "").strip()
-        if not text:
-            self._send_json({"error": "Nothing to say."}, 400)
-            return
-        try:
-            audio = synthesize_speech(text[:MAX_SPEAK_LENGTH])
-        except TTSError as e:
-            print(f"[tts] {e}", file=sys.stderr)  # visible in the Render logs
-            self._send_json({"error": "Server voice unavailable."}, 502)
-            return
-        self._send_bytes(audio, "audio/mpeg")
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002 - stdlib signature
         pass  # keep stdout quiet; errors still surface in the browser
