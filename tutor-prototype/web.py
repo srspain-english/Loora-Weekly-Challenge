@@ -39,6 +39,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import anthropic
+from google.cloud import texttospeech
 
 import tutor  # the exact tested logic: prompts, tiers, report schema
 
@@ -284,16 +285,27 @@ function pickVoice(voices) {
   return voices.find((v) => v.lang && v.lang.startsWith('en')) || null;
 }
 
-function speak(text) {
-  if (!$('speak-toggle').checked || !window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'en-US';
-  u.rate = 1;
-  u.pitch = 1;
-  const voice = pickVoice(cachedVoices.length ? cachedVoices : window.speechSynthesis.getVoices());
-  if (voice) u.voice = voice;
-  window.speechSynthesis.speak(u);
+async function speak(text) {
+  if (!$('speak-toggle').checked) return;
+  try {
+    const res = await fetch('/api/speak', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+      credentials: 'same-origin',
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      console.error('TTS error:', err.error);
+      return;
+    }
+    const audioBlob = await res.blob();
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio(audioUrl);
+    audio.play();
+  } catch (err) {
+    console.error('Failed to play audio:', err);
+  }
 }
 
 function setupVoiceInput() {
@@ -552,6 +564,9 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/feedback":
                 self._require_auth(session)
                 self._handle_feedback(session, data)
+            elif self.path == "/api/speak":
+                self._require_auth(session)
+                self._handle_speak(data)
             else:
                 self._send_json({"error": "not found"}, 404)
         except _AuthError:
@@ -655,6 +670,31 @@ class Handler(BaseHTTPRequestHandler):
         with FEEDBACK_PATH.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
         self._send_json({"ok": True})
+
+    def _handle_speak(self, data: dict) -> None:
+        text = (data.get("text") or "").strip()
+        if not text:
+            self._send_json({"error": "Text cannot be empty."}, 400)
+            return
+
+        client = texttospeech.TextToSpeechClient()
+        synthesis_input = texttospeech.SynthesisInput(text=text)
+        voice = texttospeech.VoiceSelectionParams(
+            language_code="en-US",
+            name="en-US-Neural2-A",
+        )
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.MP3,
+            pitch=0.0,
+            speaking_rate=1.0,
+        )
+
+        response = client.synthesize_speech(
+            input=synthesis_input,
+            voice=voice,
+            audio_config=audio_config,
+        )
+        self._send_bytes(response.audio_content, "audio/mpeg")
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002 - stdlib signature
         pass  # keep stdout quiet; errors still surface in the browser
