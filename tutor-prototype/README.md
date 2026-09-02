@@ -45,28 +45,31 @@ to the terminal and gets written back into that student's memory file.
   the mic button to speak (Chrome/Brave/Edge — Safari doesn't support the
   browser speech API this uses), and Juno's replies are read aloud by
   default.
-- `scenarios.json` — six Business English scenario packs, nine role-plays
-  each (54 in total), each built on one target expression:
-  - **Abadía Retuerta — Hospitality**, reformatted from the real weekly
-    scripts (`Loora_Abadia_Week4_Business_Fluency.html` in the repo root)
-    into the template from Playbook §04.
-  - **General Business English** — common workplace idioms (touch base,
-    push back, circle back) for students outside hospitality.
-  - **Sales & Client Relations** — winning clients over, following up,
-    negotiating price, closing.
-  - **Meetings & Presentations** — speaking up, raising a point, getting to
-    the point under time pressure.
-  - **HR & People** — interviews, workload, disagreement, difficult news.
-  - **Projects & Operations** — delays, bottlenecks, owning a mistake,
-    refusing to cut corners.
+- `scenarios.json` — eleven Business English scenario packs, nine role-plays
+  each (99 in total), each built on one target expression, each pack
+  spanning A2 to C1:
+
+  | Pack | Covers |
+  |---|---|
+  | **Abadía Retuerta — Hospitality** | The real weekly scripts (`Loora_Abadia_Week4_Business_Fluency.html` in the repo root), reformatted into the template from Playbook §04. Roles name that property directly. |
+  | **General Business English** | Common workplace idioms — touch base, push back, circle back. |
+  | **Hospitality & Guest Service** | The same trade as the Abadía pack but property-neutral: any hotel, restaurant or guest-facing role. |
+  | **Sales & Client Relations** | Winning clients over, following up, negotiating price, closing. |
+  | **Meetings & Presentations** | Speaking up, raising a point, getting to the point under time pressure. |
+  | **HR & People** | Interviews, workload, disagreement, difficult news. |
+  | **Projects & Operations** | Delays, bottlenecks, owning a mistake, refusing to cut corners. |
+  | **Industry & Manufacturing** | Breakdowns, capacity, quality standards, streamlining. |
+  | **Agriculture & Agrifood** | Seasons, harvests, traceability, weather risk. Several expressions work literally and figuratively at once here. |
+  | **Logistics & Supply Chain** | Delays, lost shipments, stock levels, the last mile. |
+  | **Motivation & Coaching** | Not a sector but a theme: encouragement, setbacks, overload, reframing failure. |
 
   Plus the three fluency-push techniques used during the wind-down.
 
   Adding a sector is data, not code: append a pack to `business_packs` and
   it appears in the CLI's `--pack` and in the web selector automatically.
   `tests/test_scenarios.py` enforces what the rest of the code assumes —
-  globally unique scenario ids, every field filled, CEFR levels the prompt
-  builder actually knows.
+  globally unique scenario ids, no expression taught twice across packs,
+  every field filled, CEFR levels the prompt builder actually knows.
 - `data/students/*.json` — student memory records. `alex.json` is a
   synthetic demo profile — deliberately not modeled on a real S&R student,
   since real student data lives in your Drive, not in this repo.

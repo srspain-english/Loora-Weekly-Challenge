@@ -69,6 +69,20 @@ class ScenarioLibraryTest(unittest.TestCase):
         dupes = {i for i in ids if ids.count(i) > 1}
         self.assertFalse(dupes, f"scenario ids used more than once: {sorted(dupes)}")
 
+    def test_no_expression_is_taught_twice(self) -> None:
+        # Each scenario exists to drill one expression. The same one appearing
+        # in two packs isn't a crash, it's a teaching bug: a student working
+        # through sectors would be handed the same target twice and one of
+        # the two slots would be wasted.
+        seen: dict[str, str] = {}
+        clashes = []
+        for pack_id, s in all_scenarios():
+            key = s["expression"].strip().lower()
+            if key in seen:
+                clashes.append(f"{s['expression']!r}: {seen[key]} and {pack_id}/{s['id']}")
+            seen[key] = f"{pack_id}/{s['id']}"
+        self.assertFalse(clashes, "expressions taught more than once: " + "; ".join(clashes))
+
     def test_every_scenario_has_every_field_filled(self) -> None:
         for pack_id, s in all_scenarios():
             for field in REQUIRED_FIELDS:

@@ -629,6 +629,531 @@
           "closing_instruction": "give me feedback at the end"
         }
       ]
+    },
+    {
+      "id": "hospitality_service",
+      "label": "Hospitality & Guest Service",
+      "scenarios": [
+        {
+          "id": "check_in_guest",
+          "title": "Checking a Guest In",
+          "expression": "to check in",
+          "cefr": "A2",
+          "role": "a guest arriving at reception after a long journey",
+          "domain": "how I welcome a guest and handle arrival details clearly",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "look_after",
+          "title": "Looking After the Table",
+          "expression": "to look after",
+          "cefr": "A2",
+          "role": "a colleague handing over a section of the restaurant to me",
+          "domain": "how I describe the guests and tasks I am responsible for",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "feel_at_home",
+          "title": "Making Guests Feel at Home",
+          "expression": "to make someone feel at home",
+          "cefr": "B1",
+          "role": "a nervous first-time guest unsure about how things work here",
+          "domain": "how I put a guest at ease without being over-familiar",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "out_of_your_way",
+          "title": "Going Out of Your Way",
+          "expression": "to go out of your way",
+          "cefr": "B1",
+          "role": "a guest with an unusual request I am not obliged to fulfil",
+          "domain": "how I offer extra help, and how I say no warmly when I cannot",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "smooth_over",
+          "title": "Smoothing Things Over",
+          "expression": "to smooth things over",
+          "cefr": "B1",
+          "role": "a guest annoyed about a mistake with their room or their order",
+          "domain": "how I apologise, fix the problem and recover the mood",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "bend_backwards",
+          "title": "Bending Over Backwards",
+          "expression": "to bend over backwards",
+          "cefr": "B2",
+          "role": "a demanding VIP guest whose requests keep growing",
+          "domain": "how far service should stretch, and how I hold a limit politely",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "in_your_stride",
+          "title": "Taking It in Your Stride",
+          "expression": "to take something in your stride",
+          "cefr": "B2",
+          "role": "my supervisor after an unusually chaotic service",
+          "domain": "how I stay composed when several things go wrong at once",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "pull_out_stops",
+          "title": "Pulling Out All the Stops",
+          "expression": "to pull out all the stops",
+          "cefr": "B2",
+          "role": "a colleague planning a wedding or a special event with me",
+          "domain": "how I describe the extra effort a big occasion demands",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "beck_and_call",
+          "title": "At Everyone's Beck and Call",
+          "expression": "to be at someone's beck and call",
+          "cefr": "C1",
+          "role": "a hospitality director discussing service culture with me",
+          "domain": "where attentive service ends and self-respect begins for staff",
+          "correction_instruction": "correct my English throughout, including register and word choice",
+          "push_instruction": "push me to use precise, nuanced language rather than simple restatements",
+          "closing_instruction": "give me feedback at the end"
+        }
+      ]
+    },
+    {
+      "id": "industrial_manufacturing",
+      "label": "Industry & Manufacturing",
+      "scenarios": [
+        {
+          "id": "set_up_line",
+          "title": "Setting Up the Line",
+          "expression": "to set up",
+          "cefr": "A2",
+          "role": "a colleague on the production line starting a shift with me",
+          "domain": "how I explain preparing a machine or a workstation step by step",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "break_down",
+          "title": "When the Machine Breaks Down",
+          "expression": "to break down",
+          "cefr": "A2",
+          "role": "the maintenance technician I have called about a stopped machine",
+          "domain": "how I report a breakdown clearly and ask for help",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "shut_down",
+          "title": "Shutting Down Safely",
+          "expression": "to shut down",
+          "cefr": "B1",
+          "role": "my shift supervisor during an unplanned stoppage",
+          "domain": "how I describe stopping production safely and why it was needed",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "keep_up_with",
+          "title": "Keeping Up With Demand",
+          "expression": "to keep up with",
+          "cefr": "B1",
+          "role": "a production manager reviewing this month's output with me",
+          "domain": "how I talk about capacity when orders rise faster than we can produce",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "scale_up",
+          "title": "Scaling Up Production",
+          "expression": "to scale up",
+          "cefr": "B1",
+          "role": "a colleague planning a larger production run with me",
+          "domain": "how I discuss what growing output would actually require",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "iron_out",
+          "title": "Ironing Out the Problems",
+          "expression": "to iron out",
+          "cefr": "B2",
+          "role": "an engineer working through faults in a new process with me",
+          "domain": "how I describe fixing small recurring problems before they compound",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "up_to_standard",
+          "title": "Up to Standard",
+          "expression": "to be up to standard",
+          "cefr": "B2",
+          "role": "a quality inspector questioning a batch we produced",
+          "domain": "how I defend or concede a quality judgement with evidence",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "streamline",
+          "title": "Streamlining the Process",
+          "expression": "to streamline",
+          "cefr": "B2",
+          "role": "a manager asking me where our process wastes time",
+          "domain": "how I propose removing steps without losing safety or quality",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "tight_ship",
+          "title": "Running a Tight Ship",
+          "expression": "to run a tight ship",
+          "cefr": "C1",
+          "role": "a plant director assessing how my area is managed",
+          "domain": "how discipline and flexibility trade off in a well-run operation",
+          "correction_instruction": "correct my English throughout, including register and word choice",
+          "push_instruction": "push me to use precise, nuanced language rather than simple restatements",
+          "closing_instruction": "give me feedback at the end"
+        }
+      ]
+    },
+    {
+      "id": "agriculture_agrifood",
+      "label": "Agriculture & Agrifood",
+      "scenarios": [
+        {
+          "id": "bring_in_harvest",
+          "title": "Bringing In the Harvest",
+          "expression": "to bring in",
+          "cefr": "A2",
+          "role": "a colleague working with me during harvest season",
+          "domain": "how I describe the work of gathering a crop and who does what",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "depend_on",
+          "title": "It Depends on the Weather",
+          "expression": "to depend on",
+          "cefr": "A2",
+          "role": "a colleague planning next week's fieldwork with me",
+          "domain": "how I explain that a plan rests on conditions I cannot control",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "weather_storm",
+          "title": "Weathering the Storm",
+          "expression": "to weather the storm",
+          "cefr": "B1",
+          "role": "a fellow producer after a bad season",
+          "domain": "how a business survives a bad year - the expression works literally here too",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "in_season",
+          "title": "When It's In Season",
+          "expression": "to be in season",
+          "cefr": "B1",
+          "role": "a buyer asking what I can supply and when",
+          "domain": "how I explain seasonal availability and its effect on price",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "reap_sow",
+          "title": "Reaping What You Sow",
+          "expression": "to reap what you sow",
+          "cefr": "B1",
+          "role": "a colleague reviewing the results of a decision made months ago",
+          "domain": "how earlier choices show up in later results",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "farm_to_fork",
+          "title": "From Farm to Fork",
+          "expression": "from farm to fork",
+          "cefr": "B2",
+          "role": "a distributor asking me about traceability and sourcing",
+          "domain": "how I describe a product's journey and why each step is documented",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "make_hay",
+          "title": "Making Hay While the Sun Shines",
+          "expression": "to make hay while the sun shines",
+          "cefr": "B2",
+          "role": "a colleague during an unexpectedly good stretch of weather or prices",
+          "domain": "how I argue for acting fast while conditions are favourable",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "bumper_crop",
+          "title": "A Bumper Crop",
+          "expression": "a bumper crop",
+          "cefr": "B2",
+          "role": "a buyer negotiating with me in a year of unusually high yields",
+          "domain": "how an excellent harvest can push prices down, and how I respond",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "sow_seeds",
+          "title": "Sowing the Seeds",
+          "expression": "to sow the seeds of",
+          "cefr": "C1",
+          "role": "an agricultural cooperative director discussing long-term strategy",
+          "domain": "how present investment shapes results years ahead",
+          "correction_instruction": "correct my English throughout, including register and word choice",
+          "push_instruction": "push me to use precise, nuanced language rather than simple restatements",
+          "closing_instruction": "give me feedback at the end"
+        }
+      ]
+    },
+    {
+      "id": "logistics_supply",
+      "label": "Logistics & Supply Chain",
+      "scenarios": [
+        {
+          "id": "drop_off",
+          "title": "Picking Up and Dropping Off",
+          "expression": "to drop off",
+          "cefr": "A2",
+          "role": "a driver coordinating a delivery route with me",
+          "domain": "how I give and confirm collection and delivery details",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "hold_up",
+          "title": "Held Up at Customs",
+          "expression": "to hold up",
+          "cefr": "A2",
+          "role": "a colleague asking why a shipment has not arrived",
+          "domain": "how I report a delay and what is causing it",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "track_down",
+          "title": "Tracking Down a Shipment",
+          "expression": "to track down",
+          "cefr": "B1",
+          "role": "a customer whose order has disappeared somewhere in transit",
+          "domain": "how I explain what I am doing to locate a lost consignment",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "stock_up",
+          "title": "Stocking Up Before the Peak",
+          "expression": "to stock up",
+          "cefr": "B1",
+          "role": "a warehouse colleague planning for a busy period with me",
+          "domain": "how I argue for holding more inventory ahead of demand",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "out_of_stock",
+          "title": "Out of Stock",
+          "expression": "to be out of stock",
+          "cefr": "B1",
+          "role": "a customer who wants something we cannot supply right now",
+          "domain": "how I break bad availability news and offer an alternative",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "just_in_time",
+          "title": "Just in Time",
+          "expression": "just in time",
+          "cefr": "B2",
+          "role": "an operations manager reviewing our inventory strategy",
+          "domain": "how lean stock saves money and increases risk at the same time",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "last_mile",
+          "title": "The Last Mile",
+          "expression": "the last mile",
+          "cefr": "B2",
+          "role": "a colleague analysing where our deliveries actually fail",
+          "domain": "why the final stage of delivery is the hardest and most expensive",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "bridge_gap",
+          "title": "Bridging the Gap",
+          "expression": "to bridge the gap",
+          "cefr": "B2",
+          "role": "a supplier and I working out how to cover a shortfall",
+          "domain": "how I propose a temporary fix between what we have and what is needed",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "ducks_in_row",
+          "title": "Ducks in a Row",
+          "expression": "to have all your ducks in a row",
+          "cefr": "C1",
+          "role": "a logistics director reviewing readiness before a major contract",
+          "domain": "how I show that every dependency has been anticipated",
+          "correction_instruction": "correct my English throughout, including register and word choice",
+          "push_instruction": "push me to use precise, nuanced language rather than simple restatements",
+          "closing_instruction": "give me feedback at the end"
+        }
+      ]
+    },
+    {
+      "id": "motivation_coaching",
+      "label": "Motivation & Coaching",
+      "scenarios": [
+        {
+          "id": "cheer_up",
+          "title": "Cheering a Colleague Up",
+          "expression": "to cheer someone up",
+          "cefr": "A2",
+          "role": "a colleague having a discouraging day at work",
+          "domain": "how I encourage someone without dismissing what they feel",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "keep_going",
+          "title": "Keeping Going",
+          "expression": "to keep going",
+          "cefr": "A2",
+          "role": "a colleague who wants to give up on something difficult",
+          "domain": "how I talk about persistence in simple, genuine language",
+          "correction_instruction": "correct me gently, and keep your own sentences short and clear",
+          "push_instruction": "push me to answer in short full sentences rather than single words",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "hang_in_there",
+          "title": "Hanging In There",
+          "expression": "to hang in there",
+          "cefr": "B1",
+          "role": "a teammate halfway through a hard project",
+          "domain": "how I offer support during a long difficult stretch",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "bounce_back",
+          "title": "Bouncing Back",
+          "expression": "to bounce back",
+          "cefr": "B1",
+          "role": "my manager after a piece of work of mine did not succeed",
+          "domain": "how I describe recovering from a setback and what I took from it",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "best_shot",
+          "title": "Giving It Your Best Shot",
+          "expression": "to give it your best shot",
+          "cefr": "B1",
+          "role": "a colleague nervous before an important presentation or interview",
+          "domain": "how I encourage effort when the outcome is genuinely uncertain",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "comfort_zone",
+          "title": "Out of Your Comfort Zone",
+          "expression": "to get out of your comfort zone",
+          "cefr": "B2",
+          "role": "a coach or mentor pushing me toward something I find intimidating",
+          "domain": "how I talk about deliberate discomfort as a way to improve",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "on_your_plate",
+          "title": "A Lot on Your Plate",
+          "expression": "to have a lot on your plate",
+          "cefr": "B2",
+          "role": "a manager noticing that I am overloaded",
+          "domain": "how I describe competing demands and ask for priorities to be set",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "bigger_picture",
+          "title": "Seeing the Bigger Picture",
+          "expression": "to see the bigger picture",
+          "cefr": "B2",
+          "role": "a colleague stuck on a detail that is holding up the whole team",
+          "domain": "how I lift a conversation from the immediate problem to what matters",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific and to justify what I say with a reason",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "stepping_stone",
+          "title": "A Setback as a Stepping Stone",
+          "expression": "a stepping stone",
+          "cefr": "C1",
+          "role": "a mentor helping me reframe a professional disappointment",
+          "domain": "how I turn a failure into something I can articulate as progress",
+          "correction_instruction": "correct my English throughout, including register and word choice",
+          "push_instruction": "push me to use precise, nuanced language rather than simple restatements",
+          "closing_instruction": "give me feedback at the end"
+        }
+      ]
     }
   ],
   "fluency_techniques": [
