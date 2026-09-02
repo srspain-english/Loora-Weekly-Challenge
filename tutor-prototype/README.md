@@ -66,9 +66,10 @@ to the terminal and gets written back into that student's memory file.
 3. **Root Directory**: `tutor-prototype`
 4. **Build Command**: `pip install -r requirements.txt`
 5. **Start Command**: `python3 web.py`
-6. Under **Environment**, add two variables:
+6. Under **Environment**, add these variables:
    - `ANTHROPIC_API_KEY` — your key
    - `JUNO_ACCESS_PASSPHRASE` — a code your students will type before they can use it. **Required** — `web.py` refuses to start deployed without one, since an unprotected public URL means anyone who finds it spends your API credit with no limit.
+   - `ELEVENLABS_API_KEY` — *optional*, see **Juno's voice** below.
 7. Deploy. Render gives you a URL like `https://juno-xxxx.onrender.com`.
 
 Render's free tier spins the server down after inactivity — the first request
@@ -79,6 +80,47 @@ Student memory (`data/students/*.json`) lives on Render's disk, which is
 **not persistent on the free tier** — it can reset on redeploy. Fine for a
 short pilot; if you need memory to survive long-term, that needs a real
 database, which is a bigger step than this prototype takes.
+
+## Juno's voice
+
+Two engines, in this order:
+
+1. **ElevenLabs**, if `ELEVENLABS_API_KEY` is set on the server. Every
+   student then hears the same voice, at the same quality, on any machine.
+2. **The browser's own speech engine**, otherwise — and automatically
+   whenever ElevenLabs fails, so a voice problem never costs a reply.
+
+The fallback's quality is out of our hands: it's whatever voices the
+student's operating system ships. Good on a Mac with Enhanced voices
+downloaded, robotic on a stock Windows machine. `pickVoice()` skips macOS's
+novelty voices (Albert, Zarvox, Trinoids and friends) explicitly, since
+those sort near the top of the system list and are what "it sounds like
+Stephen Hawking" usually means on a Mac.
+
+Optional overrides, both with sensible defaults:
+
+- `ELEVENLABS_VOICE_ID` — defaults to Bella (`EXAVITQu4vr4xnSDxMaL`). Voice
+  IDs come from the Voice Library in your ElevenLabs account.
+- `ELEVENLABS_MODEL` — defaults to `eleven_multilingual_v2`.
+
+**Watch the character quota.** ElevenLabs bills per character synthesised,
+and the free tier is small — roughly one or two full practice calls. A class
+of students will exhaust it quickly, so check your usage in the ElevenLabs
+dashboard before pointing a group at a deployment. Two things soften this:
+repeated lines (greetings, prompts, encouragement) are cached in memory and
+only ever billed once per server run, and any single reply is capped at
+`MAX_SPEAK_LENGTH` characters. When the quota runs out, ElevenLabs starts
+refusing requests and every student silently drops to the browser voice —
+the app keeps working, but the voice gets worse, and the reason is only
+visible in the Render logs.
+
+Never commit the key. It belongs in Render's Environment settings, and
+locally in your shell:
+
+```bash
+export ELEVENLABS_API_KEY=...
+python3 web.py
+```
 
 ## What this does and doesn't prove
 
