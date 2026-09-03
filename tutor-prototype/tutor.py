@@ -191,6 +191,35 @@ PRONUNCIATION_POLICY = textwrap.dedent("""\
 """)
 
 
+def cacheable_system(system: str) -> list[dict]:
+    """The system prompt as a cached block, for the turn-by-turn call loop.
+
+    Every turn resends this same ~1,300-token prompt plus the whole transcript
+    so far, and uncached those tokens are billed in full each time — on a
+    20-turn call that repetition, not the replies, is most of the bill. A
+    cache read costs a tenth of a fresh read, and changes nothing about what
+    Claude produces.
+
+    Call sites pair this with top-level cache_control, which caches the
+    growing conversation tail; this explicit breakpoint additionally
+    guarantees the shared prefix a read point of its own.
+
+    Two conditions, both currently held and both easy to break silently:
+    the prompt must stay byte-identical for the whole call (caching matches
+    on prefix, so interpolating a date or a turn counter would cost the
+    entire saving with no error), and it must clear the model's minimum
+    cacheable prefix — 512 tokens on Opus 5, which this clears comfortably,
+    but 4096 on some other models, where it would simply never cache.
+    tests/test_caching.py checks both.
+
+    Deliberately not used for the end-of-call report: that is a single call,
+    so a cache write there would never be read back, and its `tools` render
+    ahead of the system prompt, giving it a different prefix from the
+    conversation anyway.
+    """
+    return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+
+
 def build_system_prompt(level: str, mode: str, scenario: dict | None, student: dict) -> str:
     parts = [
         "You are Juno, the S&R Spain English tutor. You follow the S&R Tutor Playbook "
@@ -544,8 +573,9 @@ def run_call(client: anthropic.Anthropic, level: str, mode: str, scenario: dict 
     opening = client.messages.create(
         model=MODEL,
         max_tokens=1024,
-        system=system_prompt,
+        system=cacheable_system(system_prompt),
         messages=[{"role": "user", "content": "(the call has just connected — open it)"}],
+        cache_control={"type": "ephemeral"},
     )
     opening_text = next(b.text for b in opening.content if b.type == "text")
     print(f"Juno: {opening_text}\n")
@@ -569,8 +599,9 @@ def run_call(client: anthropic.Anthropic, level: str, mode: str, scenario: dict 
         response = client.messages.create(
             model=MODEL,
             max_tokens=1024,
-            system=system_prompt,
+            system=cacheable_system(system_prompt),
             messages=messages,
+            cache_control={"type": "ephemeral"},
         )
         reply = next(b.text for b in response.content if b.type == "text")
         print(f"Juno: {reply}\n")

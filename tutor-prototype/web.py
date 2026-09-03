@@ -638,7 +638,9 @@ class Handler(BaseHTTPRequestHandler):
         system = tutor.build_system_prompt(level, mode, scenario, student)
         messages = [{"role": "user", "content": "(the call has just connected — open it)"}]
         response = client.messages.create(
-            model=tutor.MODEL, max_tokens=1024, system=system, messages=messages
+            model=tutor.MODEL, max_tokens=1024,
+            system=tutor.cacheable_system(system), messages=messages,
+            cache_control={"type": "ephemeral"},
         )
         reply = next(b.text for b in response.content if b.type == "text")
         messages.append({"role": "assistant", "content": reply})
@@ -666,7 +668,8 @@ class Handler(BaseHTTPRequestHandler):
         call["messages"].append({"role": "user", "content": text})
         response = client.messages.create(
             model=tutor.MODEL, max_tokens=1024,
-            system=call["system"], messages=call["messages"],
+            system=tutor.cacheable_system(call["system"]), messages=call["messages"],
+            cache_control={"type": "ephemeral"},
         )
         reply = next(b.text for b in response.content if b.type == "text")
         call["messages"].append({"role": "assistant", "content": reply})

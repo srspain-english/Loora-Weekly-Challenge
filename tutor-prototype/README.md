@@ -97,6 +97,38 @@ Student memory (`data/students/*.json`) lives on Render's disk, which is
 short pilot; if you need memory to survive long-term, that needs a real
 database, which is a bigger step than this prototype takes.
 
+## What a call costs
+
+Every student message spends your Anthropic credit. A rough sizing, from
+measured prompt lengths rather than real invoices — a 20-turn call is around
+71k input tokens and 3.8k output, because each turn resends the system
+prompt and the whole transcript so far:
+
+| | Per call | 40 calls |
+|---|---:|---:|
+| Opus 5, uncached | $0.45 | ~$18 |
+| **Opus 5, cached (current)** | **$0.13** | **~$5** |
+
+Prompt caching (`tutor.cacheable_system`, plus top-level `cache_control` at
+each call site) is what closes that gap: a cache read costs a tenth of a
+fresh read, and the repeated prefix is most of a call's tokens. It changes
+nothing about the teaching — same model, same prompt, same replies.
+
+It is also **silent when it breaks**: no error, no behaviour change, just a
+bill several times larger. `tests/test_caching.py` asserts the conditions it
+depends on — the markers are actually sent, the system prompt stays
+byte-identical across turns, the transcript only ever grows, and the prompt
+clears the model's minimum cacheable length.
+
+Two levers deliberately not pulled, both yours to decide:
+
+- **A cheaper model.** `tutor.MODEL` is `claude-opus-5`. Sonnet 5 would cost
+  roughly $0.18 a call uncached, Haiku 4.5 about $0.09 — but unlike caching,
+  that trades away correction quality, which is the whole point of the tool.
+- **A real spend limit.** `MAX_CALLS_PER_SESSION` is per browser cookie, so
+  clearing cookies resets it, and one passphrase is shared by every student.
+  Fine for a pilot with people you know; not a cap.
+
 ## Juno's voice
 
 Juno speaks through the browser's own speech engine — no API key, no
