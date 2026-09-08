@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S&R Spain · Loora Weekly Challenge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { min-height: 100%; background: #E8E2D4; }
+  body { font-family: 'Instrument Sans', system-ui, sans-serif; color: #17130E; padding: 40px 20px; }
+  .wrap { max-width: 660px; margin: 0 auto; background: #FFFDF9; border-radius: 26px; overflow: hidden; box-shadow: 0 30px 60px -30px rgba(23,19,14,.45); border: 1px solid #EFE8D9; }
+  .header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 30px; border-bottom: 1px solid #EFE8D9; }
+  .brand { display: flex; align-items: baseline; gap: 8px; }
+  .brand-sr { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 20px; color: #17130E; }
+  .brand-sub { font-weight: 500; font-size: 20px; color: #8B8073; }
+  .toggle { display: inline-flex; padding: 3px; background: #F2ECDE; border-radius: 999px; gap: 2px; }
+  .toggle button { border: none; cursor: pointer; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; letter-spacing: .04em; padding: 6px 14px; border-radius: 999px; transition: all .15s ease; }
+  .btn-active { background: #17130E !important; color: #FFFDF9 !important; }
+  .btn-idle { background: transparent !important; color: #8B8073 !important; }
+  .hero { background: linear-gradient(135deg, #1A2E1A 0%, #17130E 100%); color: #F6F1E7; padding: 44px 30px 40px; position: relative; overflow: hidden; }
+  .hero-deco { position: absolute; top: -20px; right: -10px; font-size: 140px; line-height: 1; color: rgba(100,200,100,.08); pointer-events: none; user-select: none; }
+  .hero-eyebrow { text-transform: uppercase; letter-spacing: .18em; font-size: 12px; font-weight: 600; color: #8FD97A; position: relative; }
+  .hero h1 { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 42px; line-height: 1.05; letter-spacing: -.02em; margin: 14px 0 16px; max-width: 16ch; position: relative; }
+  .hero-body { font-size: 16px; line-height: 1.65; color: #CFC7B8; max-width: 52ch; position: relative; }
+  .hero-body strong { color: #F6F1E7; }
+  .reminders { padding: 24px 30px; border-bottom: 1px solid #EFE8D9; }
+  .section-label { text-transform: uppercase; letter-spacing: .14em; font-size: 11px; font-weight: 700; color: #4A7A3A; margin-bottom: 14px; }
+  .tip { display: flex; align-items: flex-start; gap: 10px; font-size: 15px; line-height: 1.5; color: #3A332A; margin-bottom: 10px; }
+  .tip:last-child { margin-bottom: 0; }
+  .dot { color: #5A9A4A; font-size: 12px; line-height: 1.6; flex-shrink: 0; }
+  .level-beginner { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #E8F5E9; color: #2E7D32; border: 1px solid #C8E6C9; }
+  .level-intermediate { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #FFF3E0; color: #E65100; border: 1px solid #FFE0B2; }
+  .level-advanced { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #FCE4EC; color: #C62828; border: 1px solid #F8BBD0; }
+  .section-block { padding: 28px 30px 8px; }
+  .card { border: 1px solid #EDE5D5; border-radius: 18px; padding: 20px 20px 18px; background: #fff; margin-bottom: 16px; }
+  .card-top { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 6px; }
+  .card-num { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 34px; border-radius: 9px; background: #2E5A2E; color: #FFFDF9; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+  .card-emoji { font-size: 22px; line-height: 1.5; flex-shrink: 0; }
+  .card-right { display: flex; flex-direction: column; gap: 6px; padding-top: 3px; }
+  .card-title { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 17px; line-height: 1.3; color: #17130E; }
+  .card-expression { font-size: 13px; color: #8B8073; font-style: italic; margin-bottom: 10px; }
+  .script-box { background: #F2F9F0; border: 1px solid #D4EAC8; border-left: 3px solid #5A9A4A; border-radius: 11px; padding: 13px 15px; margin-top: 12px; }
+  .script-label { text-transform: uppercase; letter-spacing: .12em; font-size: 10px; font-weight: 700; color: #3A6A2A; margin-bottom: 8px; }
+  .script-text { font-size: 14.5px; line-height: 1.6; color: #2E2820; font-style: italic; }
+  .closing-banner { margin: 22px 30px 28px; background: linear-gradient(135deg, #2E5A2E 0%, #1A3A1A 100%); color: #F0FAF0; border-radius: 18px; padding: 28px 22px; text-align: center; }
+  .closing-icon { font-size: 30px; line-height: 1; margin-bottom: 12px; }
+  .closing-quote { font-size: 14px; color: #A8D4A0; font-style: italic; margin-bottom: 14px; }
+  .closing-msg { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 18px; line-height: 1.4; max-width: 34ch; margin: 0 auto; }
+  .footer { padding: 18px 30px 24px; border-top: 1px solid #EFE8D9; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .footer-note { font-size: 13px; color: #8B8073; }
+  .footer-brand { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; color: #17130E; }
+  @media (max-width: 500px) {
+    body { padding: 16px 10px; }
+    .hero h1 { font-size: 30px; }
+    .header, .reminders, .section-block, .footer { padding-left: 18px; padding-right: 18px; }
+    .closing-banner { margin-left: 18px; margin-right: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="brand"><span class="brand-sr">S&amp;R</span><span class="brand-sub">Spain</span></div>
+    <div class="toggle">
+      <button id="btn-en" class="btn-active" onclick="setLang('en')">EN</button>
+      <button id="btn-es" class="btn-idle" onclick="setLang('es')">ES</button>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="hero-deco">🧘</div>
+    <div class="hero-eyebrow" id="eyebrow">Loora · Weekly Challenge · September</div>
+    <h1 id="hero-title">Reconnect. Recharge. Speak.</h1>
+    <p class="hero-body" id="hero-body"><strong>Hi everyone!</strong> September invites us to return — but differently. This week's challenge is inspired by the Santuario Wellness & Spa philosophy at Abadía Retuerta: rest, movement, nature and listening to yourself. And doing all of it in English. 🧘🍷</p>
+  </div>
+
+  <div class="reminders">
+    <div class="section-label" id="rem-label">Remember</div>
+    <div id="rem-list"></div>
+  </div>
+
+  <div class="section-block">
+    <div id="ch-list"></div>
+  </div>
+
+  <div class="closing-banner">
+    <div class="closing-icon">🌿</div>
+    <div class="closing-quote" id="closing-quote">"The real luxury today is finding time to listen to ourselves." — Frederico de Miguel, Santuario Wellness & Spa</div>
+    <div class="closing-msg" id="closing">Start September with a different kind of energy. In English.</div>
+  </div>
+
+  <div class="footer">
+    <span class="footer-note" id="footer-note">S&R Spain · Loora Weekly Challenge · September</span>
+    <span class="footer-brand">Abadía Retuerta</span>
+  </div>
+</div>
+
+<script>
+const SCRIPTS = [
+  'I want to practice the expression TO TAKE CARE OF in English. Act as a wellness consultant at Abadía Retuerta Santuario Spa. Ask me questions about how I take care of myself — my routine, my rest, my nutrition, and my wellbeing. Use the expression naturally and correct me gently if I make a mistake. Speak slowly and clearly.',
+  'I want to practice the expression TO LOOK FORWARD TO in English. Act as my colleague at Abadía Retuerta. Ask me questions about what I am looking forward to this September — experiences at the spa, events at the hotel, the change of season, or personal plans. Use the expression naturally in your questions and correct me if I make a grammar mistake.',
+  'I want to practice the expression TO FEEL UNDER THE WEATHER in English. Act as a guest at Abadía Retuerta who is not feeling their best and has come to the Santuario Spa for recovery. I work at the spa. Ask me questions about how you are feeling and what treatments might help. Correct my English gently throughout.',
+  'I want to practice the expression TO PUT OFF in English. Act as my manager at Abadía Retuerta. Ask me questions about things I have been putting off — at work, in my personal wellness routine, or in my professional development. Push me to be honest and specific. Correct my English throughout.',
+  'I want to practice the expression TO RELY ON in English. Act as a wellness coach at Santuario Spa. Ask me questions about what I rely on to maintain my wellbeing — habits, routines, colleagues, nature, or the spa itself. Push me to give detailed answers and use rely on naturally in my answers.',
+  'I want to practice the expression TO CATCH UP in English. Act as a colleague I haven\'t spoken to in a while. We are catching up after the summer. Ask me about what happened over the summer at the hotel, what I missed, and what I need to catch up on professionally and personally. Correct my English and keep the conversation natural.',
+  'I want to practice the expression TO CRACK UP in English — meaning to burst out laughing or to feel overwhelmed. Act as a trusted colleague at Abadía Retuerta. Ask me about situations at work that nearly made me crack up with laughter, or moments when I felt like I was cracking up under pressure. Push me to tell stories and use rich descriptive language. Correct my English and give me feedback at the end.',
+  'I want to practice the expression TO BE FED UP WITH in English. Act as my mentor at the hotel. Ask me honest questions about things I am fed up with at work — repetitive tasks, difficult situations, things that drain my energy. Then ask me what I do to reconnect and recover, inspired by the wellness philosophy of Santuario Spa. Correct my grammar and push me to use sophisticated vocabulary.',
+  'I want to practice the expression TO HAVE A GO AT in English. Act as a wellness and activities coordinator at Abadía Retuerta Santuario Spa. Ask me about things I have never tried but would like to have a go at — yoga, Chi Kung, sound baths, guided meditation, wine rituals. Push me to explain why, use descriptive language, and speak without stopping. Correct my English and give me a fluency score at the end.'
+];
+
+const DATA = {
+  en: {
+    eyebrow: 'Loora · Weekly Challenge · September',
+    title: 'Reconnect. Recharge. Speak.',
+    body: '<strong>Hi everyone!</strong> September invites us to return — but differently. This week\'s challenge is inspired by the Santuario Wellness & Spa philosophy at Abadía Retuerta: rest, movement, nature and listening to yourself. And doing all of it in English. 🧘🍷',
+    remLabel: 'Remember',
+    reminders: ['Tell Loora exactly what\'s written below — out loud!', 'Speak in full sentences.', 'Find your level — or challenge yourself with the next one up. 😎'],
+    sayLabel: 'Tell Loora',
+    closing: 'Start September with a different kind of energy. In English.',
+    closingQuote: '"The real luxury today is finding time to listen to ourselves." — Frederico de Miguel, Santuario Wellness & Spa',
+    footerNote: 'S&R Spain · Loora Weekly Challenge · September',
+    challenges: [
+      { emoji: '🌿', title: 'Taking Care of Yourself', expression: 'to take care of', level: 'beginner' },
+      { emoji: '🍂', title: 'Looking Forward to September', expression: 'to look forward to', level: 'beginner' },
+      { emoji: '🌡️', title: 'When You Feel Under the Weather', expression: 'to feel under the weather', level: 'beginner' },
+      { emoji: '⏳', title: 'Stop Putting It Off', expression: 'to put off', level: 'intermediate' },
+      { emoji: '🤝', title: 'What Do You Rely On?', expression: 'to rely on', level: 'intermediate' },
+      { emoji: '☀️', title: 'Catching Up After Summer', expression: 'to catch up', level: 'intermediate' },
+      { emoji: '😂', title: 'Cracking Up or Cracking Down?', expression: 'to crack up', level: 'advanced' },
+      { emoji: '😤', title: 'Fed Up — and Finding Balance', expression: 'to be fed up with', level: 'advanced' },
+      { emoji: '🧘', title: 'Have a Go at Something New', expression: 'to have a go at', level: 'advanced' }
+    ]
+  },
+  es: {
+    eyebrow: 'Loora · Reto Semanal · Septiembre',
+    title: 'Reconecta. Recarga. Habla.',
+    body: '<strong>¡Hola a todos!</strong> Septiembre nos invita a regresar — pero de forma diferente. El reto de esta semana está inspirado en la filosofía del Santuario Wellness & Spa de Abadía Retuerta: descanso, movimiento, naturaleza y escucharse a uno mismo. Y hacerlo todo en inglés. 🧘🍷',
+    remLabel: 'Recordad',
+    reminders: ['¡Decidle a Loora exactamente lo que pone abajo — en voz alta!', 'Hablad en frases completas.', 'Encontrad vuestro nivel — o retaos con el siguiente. 😎'],
+    sayLabel: 'Dile a Loora 🇬🇧',
+    closing: 'Empieza septiembre con un tipo diferente de energía. En inglés.',
+    closingQuote: '"El verdadero lujo hoy es encontrar tiempo para escucharnos a nosotros mismos." — Frederico de Miguel, Santuario Wellness & Spa',
+    footerNote: 'S&R Spain · Reto Semanal de Loora · Septiembre',
+    challenges: [
+      { emoji: '🌿', title: 'Cuidarte a Ti Mismo (Take Care Of)', expression: 'to take care of', level: 'beginner' },
+      { emoji: '🍂', title: 'Lo que Esperas con Ilusión de Septiembre (Look Forward To)', expression: 'to look forward to', level: 'beginner' },
+      { emoji: '🌡️', title: 'Cuando No Te Encuentras Bien (Under the Weather)', expression: 'to feel under the weather', level: 'beginner' },
+      { emoji: '⏳', title: 'Deja de Posponerlo (Put Off)', expression: 'to put off', level: 'intermediate' },
+      { emoji: '🤝', title: '¿En Qué Confías? (Rely On)', expression: 'to rely on', level: 'intermediate' },
+      { emoji: '☀️', title: 'Ponerse al Día Tras el Verano (Catch Up)', expression: 'to catch up', level: 'intermediate' },
+      { emoji: '😂', title: 'Partirse de Risa o Derrumbarse (Crack Up)', expression: 'to crack up', level: 'advanced' },
+      { emoji: '😤', title: 'Harto — y Buscando el Equilibrio (Fed Up With)', expression: 'to be fed up with', level: 'advanced' },
+      { emoji: '🧘', title: 'Atreverse a Probar Algo Nuevo (Have a Go At)', expression: 'to have a go at', level: 'advanced' }
+    ]
+  }
+};
+
+const LEVEL_LABELS = {
+  en: { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced' },
+  es: { beginner: 'Principiante', intermediate: 'Intermedio', advanced: 'Avanzado' }
+};
+
+function render(lang) {
+  const d = DATA[lang];
+  document.getElementById('eyebrow').textContent = d.eyebrow;
+  document.getElementById('hero-title').textContent = d.title;
+  document.getElementById('hero-body').innerHTML = d.body;
+  document.getElementById('rem-label').textContent = d.remLabel;
+  document.getElementById('closing').textContent = d.closing;
+  document.getElementById('closing-quote').textContent = d.closingQuote;
+  document.getElementById('footer-note').textContent = d.footerNote;
+
+  document.getElementById('rem-list').innerHTML = d.reminders.map(r =>
+    `<div class="tip"><span class="dot">◆</span><span>${r}</span></div>`
+  ).join('');
+
+  document.getElementById('ch-list').innerHTML = d.challenges.map((c, i) => `
+    <div class="card">
+      <div class="card-top">
+        <span class="card-num">${String(i+1).padStart(2,'0')}</span>
+        <span class="card-emoji">${c.emoji}</span>
+        <div class="card-right">
+          <span class="level-${c.level}">${LEVEL_LABELS[lang][c.level]}</span>
+          <span class="card-title">${c.title}</span>
+        </div>
+      </div>
+      <div class="card-expression">Expression: <em>${c.expression}</em></div>
+      <div class="script-box">
+        <div class="script-label">${d.sayLabel}</div>
+        <div class="script-text">"${SCRIPTS[i]}"</div>
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('btn-en').className = lang === 'en' ? 'btn-active' : 'btn-idle';
+  document.getElementById('btn-es').className = lang === 'es' ? 'btn-active' : 'btn-idle';
+}
+
+function setLang(lang) { render(lang); }
+render('en');
+</script>
+</body>
+</html>
