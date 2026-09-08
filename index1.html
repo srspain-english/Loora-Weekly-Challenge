@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S&R Spain — Coaching de Inglés Profesional</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #1A1A2E;
+    --warm: #F5F0E8;
+    --amber: #D4850A;
+    --amber-light: #F0A830;
+    --stone: #7A7060;
+    --cream: #FDFAF5;
+    --white: #FFFFFF;
+    --border: #E8E0D0;
+    --blue: #1A73E8;
+  }
+  html { scroll-behavior: smooth; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--cream); color: var(--ink); line-height: 1.6; }
+
+  /* NAV */
+  nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(253,250,245,.94); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); padding: 0 5vw; height: 64px; display: flex; align-items: center; justify-content: space-between; }
+  .nav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+  .nav-brand { font-family: 'Fraunces', serif; font-weight: 700; font-size: 18px; color: var(--ink); letter-spacing: -.01em; }
+  .nav-right { display: flex; align-items: center; gap: 20px; }
+  .nav-links { display: flex; align-items: center; gap: 24px; }
+  .nav-links a { font-size: 14px; font-weight: 500; color: var(--stone); text-decoration: none; transition: color .15s; }
+  .nav-links a:hover { color: var(--ink); }
+  .nav-cta { background: var(--ink); color: var(--cream) !important; padding: 8px 18px; border-radius: 8px; font-weight: 600 !important; transition: background .15s !important; }
+  .nav-cta:hover { background: var(--amber) !important; color: var(--white) !important; }
+
+  .lang-toggle { display: inline-flex; padding: 3px; background: var(--border); border-radius: 999px; gap: 2px; }
+  .lang-toggle button { border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 12px; letter-spacing: .04em; padding: 5px 12px; border-radius: 999px; transition: all .15s ease; }
+  .lang-active { background: var(--ink) !important; color: var(--cream) !important; }
+  .lang-idle { background: transparent !important; color: var(--stone) !important; }
+
+  /* HERO */
+  .hero { min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr; align-items: center; padding: 100px 5vw 80px; gap: 60px; background: var(--cream); }
+  .hero-text {}
+  .hero-tag { display: inline-block; background: var(--amber); color: var(--white); font-size: 12px; font-weight: 600; padding: 5px 14px; border-radius: 999px; margin-bottom: 28px; letter-spacing: .04em; }
+  .hero h1 { font-family: 'Fraunces', serif; font-weight: 700; font-size: clamp(36px, 4.5vw, 58px); line-height: 1.08; letter-spacing: -.02em; color: var(--ink); margin-bottom: 24px; }
+  .hero h1 em { font-style: italic; color: var(--amber); }
+  .hero-sub { font-size: 17px; line-height: 1.7; color: var(--stone); max-width: 48ch; margin-bottom: 40px; }
+  .hero-actions { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 48px; }
+  .btn-amber { background: var(--amber); color: var(--white); padding: 14px 28px; border-radius: 10px; font-weight: 600; font-size: 15px; text-decoration: none; transition: background .15s, transform .1s; display: inline-block; }
+  .btn-amber:hover { background: #B8720A; transform: translateY(-1px); }
+  .btn-ghost { background: transparent; color: var(--ink); padding: 14px 28px; border-radius: 10px; font-weight: 600; font-size: 15px; text-decoration: none; border: 1.5px solid var(--border); transition: border-color .15s; display: inline-block; }
+  .btn-ghost:hover { border-color: var(--amber); }
+  .hero-quote { border-left: 3px solid var(--amber); padding-left: 18px; }
+  .hero-quote p { font-family: 'Fraunces', serif; font-style: italic; font-size: 16px; color: var(--stone); line-height: 1.6; }
+  .hero-quote cite { display: block; font-size: 13px; font-style: normal; font-weight: 600; color: var(--ink); margin-top: 8px; }
+
+  /* HERO PHOTO */
+  .hero-visual { display: flex; justify-content: center; align-items: center; }
+  .photo-wrap { position: relative; width: 380px; height: 460px; }
+  .photo-bg { position: absolute; inset: 0; background: linear-gradient(135deg, var(--amber-light) 0%, var(--amber) 100%); border-radius: 24px 24px 80px 24px; transform: rotate(3deg); }
+  .photo-card { position: absolute; inset: 12px; background: var(--warm); border-radius: 16px 16px 72px 16px; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
+  .photo-avatar { width: 200px; height: 200px; border-radius: 50%; border: 4px solid var(--white); background: linear-gradient(135deg, #C8B89A 0%, #A09070 100%); display: flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif; font-size: 64px; font-weight: 700; color: var(--white); margin-bottom: 24px; box-shadow: 0 8px 32px rgba(0,0,0,.15); overflow: hidden; }
+  .photo-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .photo-name { font-family: 'Fraunces', serif; font-weight: 700; font-size: 20px; color: var(--ink); margin-bottom: 4px; }
+  .photo-role { font-size: 13px; color: var(--stone); margin-bottom: 28px; }
+  .photo-badge { position: absolute; top: 20px; right: -12px; background: var(--white); border-radius: 12px; padding: 10px 16px; box-shadow: 0 4px 20px rgba(0,0,0,.12); display: flex; align-items: center; gap: 8px; }
+  .badge-dot { width: 8px; height: 8px; background: #22C55E; border-radius: 50%; }
+  .badge-text { font-size: 12px; font-weight: 600; color: var(--ink); }
+
+  /* STRIP */
+  .strip { background: var(--ink); padding: 20px 5vw; }
+  .strip-inner { display: flex; align-items: center; justify-content: center; gap: 32px; flex-wrap: wrap; }
+  .strip-item { font-size: 14px; font-weight: 500; color: rgba(255,255,255,.7); display: flex; align-items: center; gap: 8px; }
+  .strip-item::before { content: ''; width: 4px; height: 4px; background: var(--amber); border-radius: 50%; }
+  .strip-item:first-child::before { display: none; }
+
+  /* ABOUT */
+  .about { padding: 96px 5vw; background: var(--white); }
+  .about-inner { max-width: 900px; margin: 0 auto; }
+  .about-top { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: start; margin-bottom: 56px; }
+  .about-label { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--amber); margin-bottom: 16px; }
+  .about-title { font-family: 'Fraunces', serif; font-weight: 700; font-size: clamp(26px, 3.5vw, 38px); line-height: 1.12; letter-spacing: -.02em; color: var(--ink); margin-bottom: 0; }
+  .about-text p { font-size: 16px; line-height: 1.8; color: var(--stone); }
+  .about-text p + p { margin-top: 16px; }
+  .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .stat-box { background: var(--warm); border-radius: 16px; padding: 28px; border: 1px solid var(--border); }
+  .stat-num { font-family: 'Fraunces', serif; font-weight: 700; font-size: 44px; line-height: 1; color: var(--amber); margin-bottom: 8px; letter-spacing: -.03em; }
+  .stat-label { font-size: 14px; color: var(--stone); line-height: 1.5; }
+
+  /* SERVICES */
+  .services { padding: 96px 5vw; background: var(--cream); }
+  .services-inner { max-width: 960px; }
+  .services-header { margin-bottom: 48px; }
+  .services-header h2 { font-family: 'Fraunces', serif; font-weight: 700; font-size: clamp(26px, 3.5vw, 40px); letter-spacing: -.02em; color: var(--ink); margin-top: 12px; max-width: 20ch; }
+  .services-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .service-card { background: var(--white); border-radius: 20px; padding: 32px; border: 1.5px solid var(--border); transition: border-color .2s, transform .2s, box-shadow .2s; }
+  .service-card:hover { border-color: var(--amber); transform: translateY(-3px); box-shadow: 0 12px 32px rgba(212,133,10,.12); }
+  .service-num { font-family: 'Fraunces', serif; font-weight: 700; font-size: 32px; color: var(--border); margin-bottom: 16px; line-height: 1; }
+  .service-card h3 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 20px; color: var(--ink); margin-bottom: 12px; line-height: 1.2; }
+  .service-card p { font-size: 14px; line-height: 1.75; color: var(--stone); }
+
+  /* LOORA */
+  .loora { padding: 96px 5vw; background: var(--ink); position: relative; overflow: hidden; }
+  .loora-deco { position: absolute; top: -60px; right: -60px; width: 400px; height: 400px; background: radial-gradient(circle, rgba(212,133,10,.15) 0%, transparent 70%); pointer-events: none; }
+  .loora-inner { max-width: 720px; position: relative; }
+  .loora-label { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--amber-light); margin-bottom: 16px; }
+  .loora h2 { font-family: 'Fraunces', serif; font-weight: 700; font-size: clamp(28px, 4vw, 48px); line-height: 1.05; letter-spacing: -.02em; color: var(--cream); margin-bottom: 20px; }
+  .loora h2 em { font-style: italic; color: var(--amber-light); }
+  .loora p { font-size: 17px; line-height: 1.7; color: rgba(253,250,245,.6); margin-bottom: 36px; max-width: 52ch; }
+  .loora-tags { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 40px; }
+  .loora-tag { background: rgba(253,250,245,.07); border: 1px solid rgba(253,250,245,.15); color: rgba(253,250,245,.75); font-size: 13px; font-weight: 500; padding: 7px 16px; border-radius: 999px; }
+
+  /* CTA */
+  .cta { padding: 96px 5vw; background: var(--warm); text-align: center; }
+  .cta-inner { max-width: 580px; margin: 0 auto; }
+  .cta h2 { font-family: 'Fraunces', serif; font-weight: 700; font-size: clamp(28px, 4vw, 44px); letter-spacing: -.02em; color: var(--ink); margin-bottom: 20px; line-height: 1.1; }
+  .cta p { font-size: 17px; color: var(--stone); margin-bottom: 36px; line-height: 1.65; }
+  .cta-actions { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn-ink { background: var(--ink); color: var(--cream); padding: 14px 28px; border-radius: 10px; font-weight: 600; font-size: 15px; text-decoration: none; transition: background .15s; display: inline-block; }
+  .btn-ink:hover { background: var(--amber); }
+
+  /* FOOTER */
+  footer { background: var(--ink); padding: 36px 5vw; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; border-top: 1px solid rgba(255,255,255,.06); }
+  .footer-brand { font-family: 'Fraunces', serif; font-weight: 600; font-size: 15px; color: rgba(253,250,245,.4); }
+  .footer-links { display: flex; gap: 24px; }
+  .footer-links a { font-size: 14px; color: rgba(253,250,245,.35); text-decoration: none; transition: color .15s; }
+  .footer-links a:hover { color: var(--cream); }
+
+  @media (max-width: 768px) {
+    .hero { grid-template-columns: 1fr; padding-top: 90px; }
+    .hero-visual { display: none; }
+    .about-top { grid-template-columns: 1fr; gap: 32px; }
+    .stats-row { grid-template-columns: 1fr 1fr; }
+    .services-grid { grid-template-columns: 1fr; }
+    .nav-links { display: none; }
+    .strip-inner { gap: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="#" class="nav-logo">
+    <svg width="34" height="34" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <text x="8" y="88" font-family="Arial Black" font-weight="900" font-size="82" fill="#1A1A2E">S</text>
+      <text x="56" y="88" font-family="Arial Black" font-weight="900" font-size="82" fill="#1A1A2E">R</text>
+      <polyline points="28,62 40,42 52,72 62,28 74,72 84,50 92,62" stroke="#D4850A" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span class="nav-brand">S&R Spain</span>
+  </a>
+  <div class="nav-right">
+    <div class="lang-toggle">
+      <button id="btn-es" class="lang-active" onclick="setLang('es')">ES</button>
+      <button id="btn-en" class="lang-idle" onclick="setLang('en')">EN</button>
+    </div>
+    <div class="nav-links">
+      <a href="#servicios" id="nav-services">Servicios</a>
+      <a href="#loora" id="nav-loora">Loora</a>
+      <a href="#contacto" id="nav-contact" class="nav-cta">Contacto</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-text">
+    <span class="hero-tag" id="hero-tag">Coaching de Inglés Profesional</span>
+    <h1 id="hero-title">Ya sabes inglés.<br>Ahora aprende a<br><em>usarlo de verdad.</em></h1>
+    <p class="hero-sub" id="hero-sub">Trabajo con profesionales que ya tienen una base en inglés pero les cuesta usarlo con soltura delante de clientes internacionales. Sin academicismos. Sin libros. Con situaciones reales.</p>
+    <div class="hero-actions">
+      <a href="mailto:s.r.valladolid@zmail.com" class="btn-amber" id="hero-btn1">Hablemos</a>
+      <a href="#servicios" class="btn-ghost" id="hero-btn2">Lo que hago</a>
+    </div>
+    <div class="hero-quote">
+      <p id="hero-quote-text">"Sabes más inglés del que crees. Ahora necesitas aprender a usarlo."</p>
+      <cite id="hero-quote-cite">Carlos Salazar · S&R Spain</cite>
+    </div>
+  </div>
+  <div class="hero-visual">
+    <div class="photo-wrap">
+      <div class="photo-bg"></div>
+      <div class="photo-card">
+        <div class="photo-avatar">
+          <img src="https://media.licdn.com/dms/image/v2/D4D03AQH_placeholder/profile-displayphoto/profile-displayphoto-shrink_800_800/0/1234?e=1234&v=beta&t=placeholder" alt="Carlos Salazar" onerror="this.style.display='none'; this.parentNode.innerHTML='CS';">
+        </div>
+        <p class="photo-name">Carlos Salazar</p>
+        <p class="photo-role" id="photo-role">English Coach · S&R Spain</p>
+      </div>
+      <div class="photo-badge">
+        <div class="badge-dot"></div>
+        <span class="badge-text" id="badge-text">Disponible</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STRIP -->
+<div class="strip">
+  <div class="strip-inner">
+    <span class="strip-item" id="strip1">Coaching individual</span>
+    <span class="strip-item" id="strip2">Formación para empresas</span>
+    <span class="strip-item" id="strip3">Inglés real</span>
+    <span class="strip-item" id="strip4">Valladolid y online</span>
+    <span class="strip-item" id="strip5">Sectores internacionales</span>
+  </div>
+</div>
+
+<!-- ABOUT -->
+<section class="about" id="sobre-mi">
+  <div class="about-inner">
+    <div class="about-top">
+      <div>
+        <div class="about-label" id="about-label">El enfoque</div>
+        <h2 class="about-title" id="about-title">Menos libro.<br>Más conversación<br>que funciona.</h2>
+      </div>
+      <div class="about-text">
+        <p id="about-p1">Trabajo con profesionales de todos los sectores — hostelería de lujo, maquinaria agrícola, consultoría, banca — que interactúan con clientes y colegas internacionales cada semana.</p>
+        <p id="about-p2">Mi método es práctico y directo. Nada de gramática por gramática. Cada sesión está diseñada alrededor de las situaciones reales que tú vives en tu trabajo.</p>
+      </div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-box">
+        <div class="stat-num">100%</div>
+        <div class="stat-label" id="stat1">Inglés aplicado a situaciones reales de trabajo</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-num">3</div>
+        <div class="stat-label" id="stat2">Formas de trabajar juntos — individual, empresa o grupo</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-num">0</div>
+        <div class="stat-label" id="stat3">Libros de texto. Solo conversación real y contexto profesional</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SERVICES -->
+<section class="services" id="servicios">
+  <div class="services-inner">
+    <div class="services-header">
+      <div class="about-label" id="services-label">Lo que hago</div>
+      <h2 id="services-title">Tres formas de<br>trabajar juntos</h2>
+    </div>
+    <div class="services-grid">
+      <div class="service-card">
+        <div class="service-num">01</div>
+        <h3 id="s1-title">Coaching individual</h3>
+        <p id="s1-text">Sesiones personalizadas para profesionales que quieren comunicarse con más confianza y naturalidad en inglés. Diseñadas alrededor de tu sector y tus situaciones reales.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-num">02</div>
+        <h3 id="s2-title">Formación para empresas</h3>
+        <p id="s2-text">Programas prácticos para equipos y empresas. Inglés enfocado en reuniones, presentaciones, negociaciones y comunicación con clientes internacionales.</p>
+      </div>
+      <div class="service-card">
+        <div class="service-num">03</div>
+        <h3 id="s3-title">Conversación y vida real</h3>
+        <p id="s3-text">Para profesionales que viajan, trabajan con clientes internacionales o simplemente quieren perder el miedo a hablar con soltura en inglés.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LOORA -->
+<section class="loora" id="loora">
+  <div class="loora-deco"></div>
+  <div class="loora-inner">
+    <div class="loora-label" id="loora-label">Práctica oral con IA</div>
+    <h2 id="loora-title">Retos semanales<br>con <em>Loora</em></h2>
+    <p id="loora-text">Mis estudiantes reciben retos de conversación semanales diseñados alrededor de su mundo real. Le dicen el prompt a Loora en voz alta y practican inglés en situaciones que realmente importan — reuniones, clientes difíciles, negociaciones, presentaciones.</p>
+    <div class="loora-tags">
+      <span class="loora-tag" id="tag1">Expresiones de negocios</span>
+      <span class="loora-tag" id="tag2">Hostelería de lujo</span>
+      <span class="loora-tag" id="tag3">Fluidez</span>
+      <span class="loora-tag" id="tag4">Presión real</span>
+      <span class="loora-tag" id="tag5">Situaciones reales</span>
+    </div>
+    <a href="mailto:s.r.valladolid@zmail.com" class="btn-amber" id="loora-btn">Pregunta por Loora</a>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta" id="contacto">
+  <div class="cta-inner">
+    <h2 id="cta-title">¿Listo para hablar con más confianza?</h2>
+    <p id="cta-text">Cuéntame qué necesitas. Si creo que puedo ayudarte, te lo digo. Si no, también.</p>
+    <div class="cta-actions">
+      <a href="mailto:s.r.valladolid@zmail.com" class="btn-ink" id="cta-btn1">Escríbeme</a>
+      <a href="https://www.linkedin.com/in/carlos-salazar-lizarazo-9a466425/" target="_blank" class="btn-ghost">LinkedIn</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <span class="footer-brand">© 2026 S&R Spain · Carlos Salazar</span>
+  <div class="footer-links">
+    <a href="https://www.linkedin.com/in/carlos-salazar-lizarazo-9a466425/" target="_blank">LinkedIn</a>
+    <a href="https://www.instagram.com/hablelikeanative" target="_blank">Instagram</a>
+    <a href="mailto:s.r.valladolid@zmail.com" id="footer-email">Email</a>
+  </div>
+</footer>
+
+<script>
+const COPY = {
+  es: {
+    heroTag: 'Coaching de Inglés Profesional',
+    heroTitle: 'Ya sabes inglés.<br>Ahora aprende a<br><em>usarlo de verdad.</em>',
+    heroSub: 'Trabajo con profesionales que ya tienen una base en inglés pero les cuesta usarlo con soltura delante de clientes internacionales. Sin academicismos. Sin libros. Con situaciones reales.',
+    heroBtn1: 'Hablemos', heroBtn2: 'Lo que hago',
+    heroQuote: '"Sabes más inglés del que crees. Ahora necesitas aprender a usarlo."',
+    heroQuoteCite: 'Carlos Salazar · S&R Spain',
+    photoRole: 'English Coach · S&R Spain', badgeText: 'Disponible',
+    strip1: 'Coaching individual', strip2: 'Formación para empresas', strip3: 'Inglés real', strip4: 'Valladolid y online', strip5: 'Sectores internacionales',
+    aboutLabel: 'El enfoque',
+    aboutTitle: 'Menos libro.<br>Más conversación<br>que funciona.',
+    aboutP1: 'Trabajo con profesionales de todos los sectores — hostelería de lujo, maquinaria agrícola, consultoría, banca — que interactúan con clientes y colegas internacionales cada semana.',
+    aboutP2: 'Mi método es práctico y directo. Nada de gramática por gramática. Cada sesión está diseñada alrededor de las situaciones reales que tú vives en tu trabajo.',
+    stat1: 'Inglés aplicado a situaciones reales de trabajo',
+    stat2: 'Formas de trabajar juntos — individual, empresa o grupo',
+    stat3: 'Libros de texto. Solo conversación real y contexto profesional',
+    servicesLabel: 'Lo que hago', servicesTitle: 'Tres formas de<br>trabajar juntos',
+    s1Title: 'Coaching individual', s1Text: 'Sesiones personalizadas para profesionales que quieren comunicarse con más confianza y naturalidad en inglés. Diseñadas alrededor de tu sector y tus situaciones reales.',
+    s2Title: 'Formación para empresas', s2Text: 'Programas prácticos para equipos y empresas. Inglés enfocado en reuniones, presentaciones, negociaciones y comunicación con clientes internacionales.',
+    s3Title: 'Conversación y vida real', s3Text: 'Para profesionales que viajan, trabajan con clientes internacionales o simplemente quieren perder el miedo a hablar con soltura en inglés.',
+    looraLabel: 'Práctica oral con IA',
+    looraTitle: 'Retos semanales<br>con <em>Loora</em>',
+    looraText: 'Mis estudiantes reciben retos de conversación semanales diseñados alrededor de su mundo real. Le dicen el prompt a Loora en voz alta y practican inglés en situaciones que realmente importan.',
+    tag1: 'Expresiones de negocios', tag2: 'Hostelería de lujo', tag3: 'Fluidez', tag4: 'Presión real', tag5: 'Situaciones reales',
+    looraBtn: 'Pregunta por Loora',
+    ctaTitle: '¿Listo para hablar con más confianza?',
+    ctaText: 'Cuéntame qué necesitas. Si creo que puedo ayudarte, te lo digo. Si no, también.',
+    ctaBtn1: 'Escríbeme',
+    navServices: 'Servicios', navLoora: 'Loora', navContact: 'Contacto',
+  },
+  en: {
+    heroTag: 'Professional English Coaching',
+    heroTitle: 'You already know English.<br>Now learn to<br><em>actually use it.</em>',
+    heroSub: 'I work with professionals who have a foundation in English but struggle to use it confidently in front of international clients. No textbooks. No grammar drills. Real situations.',
+    heroBtn1: "Let's talk", heroBtn2: 'What I do',
+    heroQuote: '"You know more English than you think. Now you need to learn how to use it."',
+    heroQuoteCite: 'Carlos Salazar · S&R Spain',
+    photoRole: 'English Coach · S&R Spain', badgeText: 'Available',
+    strip1: 'One-to-one coaching', strip2: 'Corporate training', strip3: 'Real English', strip4: 'Valladolid & online', strip5: 'International sectors',
+    aboutLabel: 'The approach',
+    aboutTitle: 'Less textbook.<br>More conversation<br>that works.',
+    aboutP1: 'I work with professionals across sectors — luxury hospitality, agricultural machinery, consulting, banking — who interact with international clients and colleagues every week.',
+    aboutP2: 'My method is practical and direct. No grammar for grammar\'s sake. Every session is built around the real situations you actually face at work.',
+    stat1: 'English applied to real work situations',
+    stat2: 'Ways to work together — individual, company or group',
+    stat3: 'Textbooks. Only real conversation and professional context',
+    servicesLabel: 'What I do', servicesTitle: 'Three ways to<br>work together',
+    s1Title: 'One-to-one coaching', s1Text: 'Personalised sessions for professionals who want to communicate with more confidence and fluency in English. Built around your sector and your real situations.',
+    s2Title: 'Corporate training', s2Text: 'Practical programmes for teams and companies. English focused on meetings, presentations, negotiations and communication with international clients.',
+    s3Title: 'Conversation & real life', s3Text: 'For professionals who travel, work with international clients or simply want to lose the fear of speaking English fluently and naturally.',
+    looraLabel: 'Speaking practice with AI',
+    looraTitle: 'Weekly challenges<br>with <em>Loora</em>',
+    looraText: 'My students receive weekly speaking challenges built around their real world. They tell Loora the prompt out loud and practice English in situations that actually matter — meetings, difficult clients, negotiations, presentations.',
+    tag1: 'Business expressions', tag2: 'Luxury hospitality', tag3: 'Fluency', tag4: 'Real pressure', tag5: 'Real scenarios',
+    looraBtn: 'Ask about Loora',
+    ctaTitle: 'Ready to speak with more confidence?',
+    ctaText: "Tell me what you need. If I think I can help, I'll tell you. If not, I'll tell you that too.",
+    ctaBtn1: 'Get in touch',
+    navServices: 'Services', navLoora: 'Loora', navContact: 'Contact',
+  }
+};
+
+function setLang(lang) {
+  const d = COPY[lang];
+  document.getElementById('hero-tag').textContent = d.heroTag;
+  document.getElementById('hero-title').innerHTML = d.heroTitle;
+  document.getElementById('hero-sub').textContent = d.heroSub;
+  document.getElementById('hero-btn1').textContent = d.heroBtn1;
+  document.getElementById('hero-btn2').textContent = d.heroBtn2;
+  document.getElementById('hero-quote-text').textContent = d.heroQuote;
+  document.getElementById('hero-quote-cite').textContent = d.heroQuoteCite;
+  document.getElementById('photo-role').textContent = d.photoRole;
+  document.getElementById('badge-text').textContent = d.badgeText;
+  document.getElementById('strip1').textContent = d.strip1;
+  document.getElementById('strip2').textContent = d.strip2;
+  document.getElementById('strip3').textContent = d.strip3;
+  document.getElementById('strip4').textContent = d.strip4;
+  document.getElementById('strip5').textContent = d.strip5;
+  document.getElementById('about-label').textContent = d.aboutLabel;
+  document.getElementById('about-title').innerHTML = d.aboutTitle;
+  document.getElementById('about-p1').textContent = d.aboutP1;
+  document.getElementById('about-p2').textContent = d.aboutP2;
+  document.getElementById('stat1').textContent = d.stat1;
+  document.getElementById('stat2').textContent = d.stat2;
+  document.getElementById('stat3').textContent = d.stat3;
+  document.getElementById('services-label').textContent = d.servicesLabel;
+  document.getElementById('services-title').innerHTML = d.servicesTitle;
+  document.getElementById('s1-title').textContent = d.s1Title;
+  document.getElementById('s1-text').textContent = d.s1Text;
+  document.getElementById('s2-title').textContent = d.s2Title;
+  document.getElementById('s2-text').textContent = d.s2Text;
+  document.getElementById('s3-title').textContent = d.s3Title;
+  document.getElementById('s3-text').textContent = d.s3Text;
+  document.getElementById('loora-label').textContent = d.looraLabel;
+  document.getElementById('loora-title').innerHTML = d.looraTitle;
+  document.getElementById('loora-text').textContent = d.looraText;
+  document.getElementById('tag1').textContent = d.tag1;
+  document.getElementById('tag2').textContent = d.tag2;
+  document.getElementById('tag3').textContent = d.tag3;
+  document.getElementById('tag4').textContent = d.tag4;
+  document.getElementById('tag5').textContent = d.tag5;
+  document.getElementById('loora-btn').textContent = d.looraBtn;
+  document.getElementById('cta-title').textContent = d.ctaTitle;
+  document.getElementById('cta-text').textContent = d.ctaText;
+  document.getElementById('cta-btn1').textContent = d.ctaBtn1;
+  document.getElementById('nav-services').textContent = d.navServices;
+  document.getElementById('nav-loora').textContent = d.navLoora;
+  document.getElementById('nav-contact').textContent = d.navContact;
+  document.getElementById('btn-es').className = lang === 'es' ? 'lang-active' : 'lang-idle';
+  document.getElementById('btn-en').className = lang === 'en' ? 'lang-active' : 'lang-idle';
+}
+</script>
+</body>
+</html>
