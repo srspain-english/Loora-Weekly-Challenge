@@ -191,37 +191,26 @@ PRONUNCIATION_POLICY = textwrap.dedent("""\
 """)
 
 
-def cacheable_system(system: str) -> list[dict]:
-    """The system prompt as a cached block, for the turn-by-turn call loop.
+def stable_prefix(level: str) -> str:
+    """The half of the system prompt that is identical for every student.
 
-    Every turn resends this same ~1,300-token prompt plus the whole transcript
-    so far, and uncached those tokens are billed in full each time — on a
-    20-turn call that repetition, not the replies, is most of the bill. A
-    cache read costs a tenth of a fresh read, and changes nothing about what
-    Claude produces.
+    Split out from the per-student half so it can be cached on its own. Two
+    things follow from that, and both matter:
 
-    Call sites pair this with top-level cache_control, which caches the
-    growing conversation tail; this explicit breakpoint additionally
-    guarantees the shared prefix a read point of its own.
+    Privacy — nothing identifying a student is inside the block marked
+    cacheable. (Anthropic's cache is keyed on an exact prefix match and scoped
+    to our own workspace, so student data in there was never readable by
+    anyone else; it is simply not somewhere personal data belongs.)
 
-    Two conditions, both currently held and both easy to break silently:
-    the prompt must stay byte-identical for the whole call (caching matches
-    on prefix, so interpolating a date or a turn counter would cost the
-    entire saving with no error), and it must clear the model's minimum
-    cacheable prefix — 512 tokens on Opus 5, which this clears comfortably,
-    but 4096 on some other models, where it would simply never cache.
-    tests/test_caching.py checks both.
+    Cost — this ~1,240-token block is now shared by every student at the same
+    level rather than cached once per student, so a class starting after
+    someone else's warms up on their cache entry instead of writing a new one.
 
-    Deliberately not used for the end-of-call report: that is a single call,
-    so a cache write there would never be read back, and its `tools` render
-    ahead of the system prompt, giving it a different prefix from the
-    conversation anyway.
+    Depends only on `level`, and must stay byte-identical for a given level:
+    interpolating anything per-student or per-call here silently costs the
+    entire saving.
     """
-    return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
-
-
-def build_system_prompt(level: str, mode: str, scenario: dict | None, student: dict) -> str:
-    parts = [
+    return "\n".join([
         "You are Juno, the S&R Spain English tutor. You follow the S&R Tutor Playbook "
         "exactly. You are warm, direct, and economical with words — you are not a customer "
         "service bot and you do not pad your replies with disclaimers or enthusiasm. Keep "
@@ -232,13 +221,23 @@ def build_system_prompt(level: str, mode: str, scenario: dict | None, student: d
         f"\nCORRECTION LAYER:\n{CORRECTION_TIERS}",
         f"\nSESSION ARC:\n{SESSION_ARC}",
         f"\nPRONUNCIATION POLICY:\n{PRONUNCIATION_POLICY}",
-        "\nSTUDENT MEMORY (use this to open the call — reference something concrete):\n"
-        + json.dumps(student, indent=2),
         "\nHOUSE STYLE for corrections: short and specific, the way S&R's own class "
         "recaps read — e.g. 'FAN, not fun — and a big fan OF' or 'the swallowed CAN'T, "
         "plus DELIVER is the verb (delivery is the noun)'. Never a generic 'grammar "
         "mistake' label. If the student produces a whole sentence with no Spanish "
         "reached for, that belongs in what went well.",
+    ])
+
+
+def dynamic_context(level: str, mode: str, scenario: dict | None, student: dict) -> str:
+    """The per-student half: memory, scenario, this session's grammar point.
+
+    Never marked cacheable. It changes per student and per call, so caching it
+    would buy nothing even setting privacy aside.
+    """
+    parts = [
+        "\nSTUDENT MEMORY (use this to open the call — reference something concrete):\n"
+        + json.dumps(student, indent=2),
     ]
 
     if mode == "free":
@@ -298,6 +297,37 @@ def build_system_prompt(level: str, mode: str, scenario: dict | None, student: d
         "closing step, then stop."
     )
     return "\n".join(parts)
+
+
+def build_system_prompt(level: str, mode: str, scenario: dict | None, student: dict) -> str:
+    """The whole system prompt as one string.
+
+    Kept for the CLI and for anything that just wants to read the prompt. The
+    server sends the two halves separately — see build_system_blocks.
+    """
+    return stable_prefix(level) + "\n" + dynamic_context(level, mode, scenario, student)
+
+
+def build_system_blocks(level: str, mode: str, scenario: dict | None,
+                        student: dict) -> list[dict]:
+    """The system prompt as API blocks: cached prefix, then uncached context.
+
+    Order matters. Caching matches on a prefix, so the stable half has to come
+    first and carry the only breakpoint; the student's half sits after it and
+    is re-read fresh every turn, which is what we want for a few hundred
+    tokens that change anyway.
+    """
+    return [
+        {
+            "type": "text",
+            "text": stable_prefix(level),
+            "cache_control": {"type": "ephemeral"},
+        },
+        {
+            "type": "text",
+            "text": dynamic_context(level, mode, scenario, student),
+        },
+    ]
 
 
 REPORT_TOOL = {
@@ -560,7 +590,7 @@ def apply_report_to_student(student: dict, report: dict, mode: str, scenario: di
 
 
 def run_call(client: anthropic.Anthropic, level: str, mode: str, scenario: dict | None, student: dict) -> None:
-    system_prompt = build_system_prompt(level, mode, scenario, student)
+    system_blocks = build_system_blocks(level, mode, scenario, student)
     messages: list[dict] = []
 
     print("\n" + "-" * 60)
@@ -573,7 +603,7 @@ def run_call(client: anthropic.Anthropic, level: str, mode: str, scenario: dict 
     opening = client.messages.create(
         model=MODEL,
         max_tokens=1024,
-        system=cacheable_system(system_prompt),
+        system=system_blocks,
         messages=[{"role": "user", "content": "(the call has just connected — open it)"}],
         cache_control={"type": "ephemeral"},
     )
@@ -599,7 +629,7 @@ def run_call(client: anthropic.Anthropic, level: str, mode: str, scenario: dict 
         response = client.messages.create(
             model=MODEL,
             max_tokens=1024,
-            system=cacheable_system(system_prompt),
+            system=system_blocks,
             messages=messages,
             cache_control={"type": "ephemeral"},
         )

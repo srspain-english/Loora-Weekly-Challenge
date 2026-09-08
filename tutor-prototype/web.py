@@ -34,22 +34,25 @@ import os
 import secrets
 import sys
 import threading
+import traceback
 import webbrowser
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import anthropic
 
+import store  # identity, limits, saved calls, cost metrics
 import tutor  # the exact tested logic: prompts, tiers, report schema
 
 RUNNING_DEPLOYED = bool(os.environ.get("PORT"))
 HOST = "0.0.0.0" if RUNNING_DEPLOYED else "127.0.0.1"
 PORT = int(os.environ.get("PORT", 8765))
 ACCESS_PASSPHRASE = os.environ.get("JUNO_ACCESS_PASSPHRASE", "")
-MAX_MESSAGES_PER_CALL = 40
-MAX_CALLS_PER_SESSION = 8
 MAX_FEEDBACK_LENGTH = 2000
 FEEDBACK_PATH = tutor.BASE_DIR / "data" / "feedback.jsonl"
+# A year: the point of this cookie is that a student stays the same person
+# between classes without having to be given a code first.
+STUDENT_COOKIE_MAX_AGE = 365 * 24 * 3600
 
 # Per-browser-session state, keyed by a random cookie value. Necessary as
 # soon as more than one person can reach this server at once - a single
@@ -521,21 +524,75 @@ class Handler(BaseHTTPRequestHandler):
     def _load_session(self) -> dict:
         cookies = http.cookies.SimpleCookie()
         cookies.load(self.headers.get("Cookie", ""))
+        self._cookies = cookies
+        self._pending_cookies = []
+
         sid = cookies["juno_sid"].value if "juno_sid" in cookies else None
         if not sid or sid not in SESSIONS:
             sid = secrets.token_urlsafe(24)
             SESSIONS[sid] = {"authed": not ACCESS_PASSPHRASE, "call_count": 0}
-            self._new_sid = sid
-        else:
-            self._new_sid = None
+            self._set_cookie("juno_sid", sid)
         self._sid = sid
         return SESSIONS[sid]
 
-    def _cookie_header(self) -> str | None:
-        if getattr(self, "_new_sid", None):
-            secure = "; Secure" if RUNNING_DEPLOYED else ""
-            return f"juno_sid={self._new_sid}; Path=/; HttpOnly; SameSite=Lax{secure}"
+    def _set_cookie(self, name: str, value: str, max_age: int | None = None) -> None:
+        secure = "; Secure" if RUNNING_DEPLOYED else ""
+        age = f"; Max-Age={max_age}" if max_age else ""
+        self._pending_cookies.append(
+            f"{name}={value}; Path=/; HttpOnly; SameSite=Lax{secure}{age}"
+        )
+
+    def _cookie_headers(self) -> list[str]:
+        return getattr(self, "_pending_cookies", [])
+
+    def _student_cookie(self) -> str | None:
+        cookies = getattr(self, "_cookies", None)
+        if cookies and "juno_student" in cookies:
+            return cookies["juno_student"].value
         return None
+
+    def _resolve_student(self, data: dict) -> dict:
+        """Work out which student this request belongs to.
+
+        Identity is no longer the typed name. In order of authority:
+
+        1. An individual access code, if the student has one. This identifies
+           them exactly, on any device — the way out of the shared-passphrase
+           pilot.
+        2. A long-lived `juno_student` cookie holding their internal id. Two
+           students both called Maria, on their own machines, are two records
+           that never touch each other's memory.
+        3. Otherwise a new student is created.
+
+        The typed name only ever sets `display_name`, so a student can correct
+        their own spelling without becoming a different person and losing
+        everything Juno has learned about them.
+        """
+        code = (data.get("access_code") or "").strip()
+        if code:
+            found = store.student_by_access_code(code)
+            if found:
+                student_id = found["student_id"]
+                self._set_cookie("juno_student", student_id, STUDENT_COOKIE_MAX_AGE)
+                typed = (data.get("student") or "").strip()
+                if typed and typed != found["display_name"]:
+                    store.set_display_name(student_id, typed)
+                store.touch_student(student_id)
+                return store.get_student(student_id)
+
+        typed = (data.get("student") or "").strip()
+        cookie_id = self._student_cookie()
+        if cookie_id:
+            known = store.get_student(cookie_id)
+            if known:
+                if typed and typed != known["display_name"]:
+                    store.set_display_name(cookie_id, typed)
+                store.touch_student(cookie_id)
+                return store.get_student(cookie_id)
+
+        student_id = store.create_student(typed or "Student")
+        self._set_cookie("juno_student", student_id, STUDENT_COOKIE_MAX_AGE)
+        return store.get_student(student_id)
 
     def _send_json(self, obj, status: int = 200) -> None:
         body = json.dumps(obj).encode("utf-8")
@@ -543,8 +600,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        cookie = self._cookie_header()
-        if cookie:
+        for cookie in self._cookie_headers():
             self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
@@ -554,8 +610,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        cookie = self._cookie_header()
-        if cookie:
+        for cookie in self._cookie_headers():
             self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
@@ -588,6 +643,12 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/end":
                 self._require_auth(session)
                 self._handle_end(session, data)
+            elif self.path == "/api/resume":
+                self._require_auth(session)
+                self._handle_resume(session, data)
+            elif self.path == "/api/abandon":
+                self._require_auth(session)
+                self._handle_abandon(session, data)
             elif self.path == "/api/feedback":
                 self._require_auth(session)
                 self._handle_feedback(session, data)
@@ -599,8 +660,19 @@ class Handler(BaseHTTPRequestHandler):
             # Bad input from the page, not a server fault - usually a stale
             # tab holding scenario ids from an older scenarios.json.
             self._send_json({"error": str(e)}, 400)
-        except Exception as e:  # noqa: BLE001 - surface any failure to the browser
-            self._send_json({"error": str(e)}, 500)
+        except Exception as e:  # noqa: BLE001
+            # The detail goes to the server log, not to the browser. An
+            # exception message can carry request context, internal paths, or
+            # whatever a library chose to interpolate into it - none of which
+            # a student's browser should ever receive. They get a sentence
+            # they can act on; the operator gets the traceback.
+            print(f"[juno] unhandled error on {self.path}: {e!r}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            self._send_json(
+                {"error": "Something went wrong on our side. Please try again — "
+                          "your class is saved."},
+                500,
+            )
 
     def _require_auth(self, session: dict) -> None:
         if not session.get("authed"):
@@ -617,74 +689,241 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "Wrong passphrase."}, 401)
 
-    def _handle_start(self, session: dict, data: dict) -> None:
-        if session.get("call_count", 0) >= MAX_CALLS_PER_SESSION:
-            self._send_json({"error": "Call limit reached for this browser session."}, 429)
-            return
-        session["call_count"] = session.get("call_count", 0) + 1
+    def _call_model(self, system_blocks, messages, *, student_id, call_id,
+                    kind: str) -> str:
+        """One turn against the model: cached if possible, billed either way.
 
-        student_id = (data.get("student") or "demo").strip().lower().replace(" ", "_") or "demo"
-        student = tutor.load_student(student_id)
+        Caching is an optimisation, never a dependency. If the API rejects the
+        cached shape — an unsupported block layout, a prefix under the model's
+        minimum, a change on their side — the class carries on uncached rather
+        than failing in front of a student. That fallback is the whole reason
+        this is one function instead of an inline call.
+        """
+        flat = "\n".join(b["text"] for b in system_blocks)
+        try:
+            response = client.messages.create(
+                model=tutor.MODEL, max_tokens=1024,
+                system=system_blocks, messages=messages,
+                cache_control={"type": "ephemeral"},
+            )
+        except anthropic.BadRequestError as e:
+            print(f"[juno] cache-shape rejected, retrying uncached: {e}",
+                  file=sys.stderr)
+            response = client.messages.create(
+                model=tutor.MODEL, max_tokens=1024,
+                system=flat, messages=messages,
+            )
+
+        self._record_metrics(response, student_id=student_id, call_id=call_id,
+                             kind=kind)
+        return next(b.text for b in response.content if b.type == "text")
+
+    def _record_metrics(self, response, *, student_id: str, call_id: str,
+                        kind: str) -> None:
+        """Log what a turn cost, and bank it against the student's limits.
+
+        Deliberately narrow: counts, an id, and money. No transcript, no
+        message text, no name, no key — a log that carries the class content
+        would be a second copy of the student's data in a place nobody is
+        guarding.
+        """
+        # Wrapped whole: a student in the middle of a class must never lose it
+        # because the accounting hit something unexpected. Observability is
+        # worth having, never worth a failed turn.
+        try:
+            usage = getattr(response, "usage", None)
+            cost = store.estimate_cost(usage)
+            store.record_usage(student_id, cost, turns=1)
+
+            def _n(attr):
+                return int(getattr(usage, attr, 0) or 0) if usage else 0
+
+            print(json.dumps({
+                "event": "turn",
+                "kind": kind,
+                "call_id": call_id,
+                "student_id": student_id,   # internal random id, not a name
+                "input_tokens": _n("input_tokens"),
+                "cache_read_tokens": _n("cache_read_input_tokens"),
+                "cache_write_tokens": _n("cache_creation_input_tokens"),
+                "output_tokens": _n("output_tokens"),
+                "cost_usd": round(cost, 6),
+                "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }), file=sys.stderr)
+
+            spend = store.daily_spend()
+            if (store.DAILY_COST_CEILING_USD > 0
+                    and spend >= store.DAILY_COST_CEILING_USD * 0.8):
+                print(f"[juno] WARNING: today's spend is ${spend:.2f} of the "
+                      f"${store.DAILY_COST_CEILING_USD:.2f} ceiling",
+                      file=sys.stderr)
+        except Exception as e:  # noqa: BLE001
+            print(f"[juno] metrics failed (class unaffected): {e}", file=sys.stderr)
+
+    def _handle_start(self, session: dict, data: dict) -> None:
+        student = self._resolve_student(data)
+        student_id = student["student_id"]
+
+        try:
+            store.check_can_start_call(student_id)
+        except store.LimitReached as e:
+            self._send_json({"error": str(e)}, 429)
+            return
+
+        memory = tutor.load_student(student_id)
+        memory["display_name"] = student["display_name"]
         mode = data.get("mode") if data.get("mode") in ("business", "structured") else "free"
 
         level = data.get("level")
         if level not in tutor.LEVEL_RULES:
-            level = student.get("cefr_level", "B1").rstrip("+")
+            level = memory.get("cefr_level", "B1").rstrip("+")
         if level not in tutor.LEVEL_RULES:
             level = "B1"
 
         scenario = tutor.pick_scenario(data.get("scenario_id"), data.get("pack")) if mode == "business" else None
 
-        system = tutor.build_system_prompt(level, mode, scenario, student)
+        # The cached half depends only on the level; the student's memory and
+        # the scenario go in the uncached half.
+        system_blocks = tutor.build_system_blocks(level, mode, scenario, memory)
         messages = [{"role": "user", "content": "(the call has just connected — open it)"}]
-        response = client.messages.create(
-            model=tutor.MODEL, max_tokens=1024,
-            system=tutor.cacheable_system(system), messages=messages,
-            cache_control={"type": "ephemeral"},
-        )
-        reply = next(b.text for b in response.content if b.type == "text")
-        messages.append({"role": "assistant", "content": reply})
 
-        session["call"] = {
-            "student": student, "mode": mode, "scenario": scenario,
-            "system": system, "messages": messages, "message_count": 0,
-        }
-        self._send_json({"reply": reply, "scenario": scenario["title"] if scenario else None})
+        call_id = store.create_call(
+            student_id, mode, level,
+            scenario["id"] if scenario else None,
+            json.dumps(system_blocks), messages,
+        )
+        store.record_call_started(student_id)
+
+        reply = self._call_model(system_blocks, messages,
+                                 student_id=student_id, call_id=call_id,
+                                 kind="open")
+        messages.append({"role": "assistant", "content": reply})
+        store.save_turn(call_id, messages, 0)
+
+        session["call_id"] = call_id
+        self._send_json({
+            "reply": reply,
+            "call_id": call_id,
+            "scenario": scenario["title"] if scenario else None,
+            "display_name": student["display_name"],
+            "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        })
+
+    def _current_call(self, session: dict) -> dict | None:
+        call_id = session.get("call_id")
+        if not call_id:
+            return None
+        call = store.get_call(call_id)
+        return call if call and call["status"] == "open" else None
 
     def _handle_message(self, session: dict, data: dict) -> None:
-        call = session.get("call")
+        # A retry of a request we already answered replays the stored answer
+        # instead of asking the model again: no duplicated turn in the
+        # transcript, and nothing billed twice.
+        key = (data.get("idempotency_key") or "").strip()[:80]
+        replayed = store.replayed_response(key) if key else None
+        if replayed is not None:
+            self._send_json(replayed)
+            return
+
+        call = self._current_call(session)
         if not call:
-            self._send_json({"error": "No call in progress. Start a call first."}, 400)
+            self._send_json({"error": "No class in progress. Start one first."}, 400)
             return
-        if call["message_count"] >= MAX_MESSAGES_PER_CALL:
-            self._send_json({"error": "Message limit reached for this call. End the call to see your report."}, 429)
-            return
+
         text = (data.get("text") or "").strip()
         if not text:
             self._send_json({"error": "Empty message."}, 400)
             return
+        if len(text) > store.MAX_MESSAGE_CHARS:
+            self._send_json({"error": "That message is too long to send."}, 400)
+            return
 
-        call["message_count"] += 1
-        call["messages"].append({"role": "user", "content": text})
-        response = client.messages.create(
-            model=tutor.MODEL, max_tokens=1024,
-            system=tutor.cacheable_system(call["system"]), messages=call["messages"],
-            cache_control={"type": "ephemeral"},
-        )
-        reply = next(b.text for b in response.content if b.type == "text")
-        call["messages"].append({"role": "assistant", "content": reply})
-        self._send_json({"reply": reply})
+        try:
+            store.check_can_send_turn(call)
+        except store.LimitReached as e:
+            self._send_json({"error": str(e)}, 429)
+            return
+
+        student_id = call["student_id"]
+        system_blocks = json.loads(call["system"])
+        messages = call["transcript"] + [{"role": "user", "content": text}]
+
+        reply = self._call_model(system_blocks, messages,
+                                 student_id=student_id, call_id=call["call_id"],
+                                 kind="turn")
+        messages.append({"role": "assistant", "content": reply})
+
+        turns = call["turns"] + 1
+        store.save_turn(call["call_id"], messages, turns)
+
+        payload = {
+            "reply": reply,
+            "turns": turns,
+            "turns_left": max(0, store.MAX_TURNS_PER_CALL - turns),
+            "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        if key:
+            store.remember_response(key, call["call_id"], payload)
+        self._send_json(payload)
+
+    def _handle_resume(self, session: dict, data: dict) -> None:
+        """Hand back an unfinished class so it can be picked up again.
+
+        Looked up by student rather than by browser session, so it survives a
+        closed tab, a different device, and a server restart.
+        """
+        student = self._resolve_student(data)
+        call = store.open_call_for(student["student_id"])
+        if not call:
+            self._send_json({"open_call": None})
+            return
+        session["call_id"] = call["call_id"]
+        self._send_json({"open_call": {
+            "call_id": call["call_id"],
+            "mode": call["mode"],
+            "level": call["level"],
+            "turns": call["turns"],
+            "started_at": call["started_at"],
+            "updated_at": call["updated_at"],
+            "transcript": call["transcript"][1:],  # drop the synthetic opener
+        }})
 
     def _handle_end(self, session: dict, data: dict) -> None:
-        call = session.get("call")
+        # Accept an explicit call_id so a class can be closed and reported on
+        # later, from a different tab, without ever having pressed End call.
+        call_id = (data.get("call_id") or "").strip() or session.get("call_id")
+        call = store.get_call(call_id) if call_id else None
         if not call:
-            self._send_json({"error": "No call in progress."}, 400)
+            self._send_json({"error": "No class to finish."}, 400)
             return
-        report = tutor.generate_report(client, call["messages"])
-        student = tutor.apply_report_to_student(call["student"], report, call["mode"], call["scenario"])
-        tutor.save_student(student)
-        session["call"] = None
+        if call["status"] != "open":
+            if call.get("report"):
+                self._send_json({"report": call["report"]})
+                return
+            self._send_json({"error": "That class is already closed."}, 400)
+            return
+
+        # The report is its own request, with its own tools and no cache
+        # marker - as it always was.
+        report = tutor.generate_report(client, call["transcript"])
+
+        memory = tutor.load_student(call["student_id"])
+        memory = tutor.apply_report_to_student(
+            memory, report, call["mode"],
+            {"id": call["scenario_id"]} if call["scenario_id"] else None,
+        )
+        tutor.save_student(memory)
+        store.finish_call(call["call_id"], report)
+        session["call_id"] = None
         self._send_json({"report": report})
+
+    def _handle_abandon(self, session: dict, data: dict) -> None:
+        call = self._current_call(session)
+        if call:
+            store.abandon_call(call["call_id"])
+        session["call_id"] = None
+        self._send_json({"ok": True})
 
     def _handle_feedback(self, session: dict, data: dict) -> None:
         text = (data.get("text") or "").strip()
@@ -719,6 +958,16 @@ def main() -> None:
             "JUNO_ACCESS_PASSPHRASE is not set. Refusing to start unprotected on "
             "the public internet — set that environment variable first."
         )
+
+    # Open the database and bring any name-keyed memory files across to real
+    # student ids. The migration copies rather than moves, so the old files
+    # stay untouched, and it is safe to run on every boot.
+    store.connect()
+    migrated = store.migrate_legacy_students(tutor.STUDENTS_DIR)
+    for entry in migrated:
+        print(f"Migrated student memory '{entry['legacy_id']}' "
+              f"-> {entry['student_id']} ({entry['display_name']})")
+    store.prune_idempotency()
 
     url = f"http://127.0.0.1:{PORT}" if not RUNNING_DEPLOYED else f"port {PORT}"
 

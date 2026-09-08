@@ -56,16 +56,47 @@ def fake_reply(text: str = "Hello there."):
     block.text = text
     response = mock.Mock()
     response.content = [block]
+    response.usage = mock.Mock(
+        input_tokens=120, output_tokens=40,
+        cache_read_input_tokens=0, cache_creation_input_tokens=0,
+    )
     return response
 
 
 class CacheableSystemTest(unittest.TestCase):
-    def test_marks_the_prompt_as_cacheable(self) -> None:
-        blocks = tutor.cacheable_system("some system prompt")
-        self.assertEqual(len(blocks), 1)
-        self.assertEqual(blocks[0]["type"], "text")
-        self.assertEqual(blocks[0]["text"], "some system prompt")
+    def test_only_the_shared_prefix_is_marked_cacheable(self) -> None:
+        scenario = tutor.pick_scenario("on_the_ball")
+        blocks = tutor.build_system_blocks("B1", "business", scenario, STUDENT)
+        self.assertEqual(len(blocks), 2)
         self.assertEqual(blocks[0]["cache_control"], {"type": "ephemeral"})
+        self.assertNotIn("cache_control", blocks[1])
+
+    def test_the_cached_block_carries_no_student_data(self) -> None:
+        # The reason for splitting the prompt at all: nothing identifying a
+        # student belongs in a block marked for caching.
+        student = dict(STUDENT, name="Encarnacion Zubizarreta",
+                       vocab_acquired_log=["bottleneck — a slow point"])
+        prefix = tutor.stable_prefix("B1")
+        self.assertNotIn("Encarnacion", prefix)
+        self.assertNotIn("bottleneck", prefix)
+
+    def test_two_students_share_the_cached_prefix_byte_for_byte(self) -> None:
+        # And the payoff: one cache entry serves every student at a level,
+        # instead of one entry each.
+        a = tutor.build_system_blocks("B1", "free", None, dict(STUDENT, name="Ana"))
+        b = tutor.build_system_blocks("B1", "free", None, dict(STUDENT, name="Bea"))
+        self.assertEqual(a[0]["text"], b[0]["text"])
+        self.assertNotEqual(a[1]["text"], b[1]["text"])
+
+    def test_the_cached_prefix_alone_clears_the_minimum(self) -> None:
+        # It is cached on its own now, so it has to clear 512 tokens on its
+        # own too - the student's half no longer pads it out.
+        for level in ("A2", "B1", "B2", "C1"):
+            with self.subTest(level=level):
+                self.assertGreater(
+                    len(tutor.stable_prefix(level)) // CHARS_PER_TOKEN,
+                    MIN_CACHEABLE_TOKENS,
+                )
 
     def test_system_prompt_is_byte_identical_across_turns(self) -> None:
         # The silent killer: anything varying in here - a timestamp, a turn
@@ -128,7 +159,12 @@ class CallLoopSendsCacheMarkersTest(unittest.TestCase):
     def _assert_cached(self, kwargs: dict) -> None:
         system = kwargs["system"]
         self.assertIsInstance(system, list, "system must be blocks to carry a marker")
+        self.assertEqual(len(system), 2, "expected a cached prefix and a dynamic half")
         self.assertEqual(system[0]["cache_control"], {"type": "ephemeral"})
+        self.assertNotIn(
+            "cache_control", system[1],
+            "the student's own half must never be marked cacheable",
+        )
         self.assertEqual(
             kwargs.get("cache_control"),
             {"type": "ephemeral"},
