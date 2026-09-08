@@ -89,13 +89,45 @@ to the terminal and gets written back into that student's memory file.
 7. Deploy. Render gives you a URL like `https://juno-xxxx.onrender.com`.
 
 Render's free tier spins the server down after inactivity — the first request
-after a quiet period takes 30–60 seconds to wake up. That's normal, not a
-bug; a paid tier removes it if it becomes annoying.
+after a quiet period takes 30–60 seconds to wake up. The page now says so
+while it happens, and tells that apart from being offline or a real error.
 
-Student memory (`data/students/*.json`) lives on Render's disk, which is
-**not persistent on the free tier** — it can reset on redeploy. Fine for a
-short pilot; if you need memory to survive long-term, that needs a real
-database, which is a bigger step than this prototype takes.
+### Optional environment variables
+
+All have working defaults; set them only to tighten something.
+
+| Variable | Default | What it does |
+|---|---:|---|
+| `JUNO_MAX_TURNS_PER_CALL` | 40 | Messages in one class before it asks the student to wrap up. |
+| `JUNO_MAX_CALLS_PER_DAY` | 6 | Classes per student per day. |
+| `JUNO_MAX_TRANSCRIPT_CHARS` | 120000 | Length ceiling on one class. |
+| `JUNO_MAX_MESSAGE_CHARS` | 4000 | Longest single message accepted. |
+| `JUNO_DAILY_COST_CEILING_USD` | 5.00 | **Emergency brake.** Once the whole deployment has spent this in a day, no new classes start for anyone. |
+| `JUNO_SESSION_COST_WARN_USD` | 1.00 | Logs a warning past this much in one session. |
+| `JUNO_DB_PATH` | `data/juno.db` | Where server state lives. |
+
+### Migration (automatic, and non-destructive)
+
+On first boot after this change, each `data/students/<name>.json` is given a
+real student id and its memory **copied** to `<new id>.json`. The original
+files are left byte-for-byte where they are, so nothing is lost if something
+about the migration turns out to be wrong, and re-running is a no-op. Each
+migration prints a line naming the old and new ids.
+
+Nothing to run by hand; nothing to undo.
+
+### What survives a restart, and what doesn't
+
+Server state — identities, limits, saved classes, spend — lives in SQLite at
+`data/juno.db`, so it survives the process being restarted, which is what
+normally happens when the free tier idles out and wakes back up.
+
+It does **not** survive a redeploy: Render's free tier has no persistent
+disk, so a new deploy starts from an empty database. In practice that means
+daily limits reset and unfinished classes become unrecoverable on the day you
+deploy. For a pilot that is a reasonable trade; if this outgrows it, the fix
+is a Render disk or a managed Postgres, and `store.py` is the only file that
+would change.
 
 ## What a call costs
 
@@ -149,6 +181,38 @@ single class exhausts it, in exchange for a nicer voice on a tool whose
 value is in the corrections. If it's ever revisited, the thing to keep in
 mind is that a server voice must degrade to this one rather than to
 silence.
+
+## Students, limits, and saved classes
+
+`store.py` holds the server-side state the browser used to be trusted with.
+
+**Identity is not the name.** A student is a random `stu_…` id; the name they
+type is only a label. So two students called Maria never share a memory
+record, and one student retyping her own name keeps hers. Identity is
+resolved from, in order: an individual access code, a year-long cookie, or a
+new record.
+
+**Individual codes** are the way off a single shared passphrase. The schema
+and lookup are in place (`students.access_code`, and a field on the setup
+screen); handing them out is a decision, not a code change. Until then the
+shared passphrase means anyone with the code can start a class as a new
+student — fine among people you know, not a real access control.
+
+**Limits are server-side**, so clearing cookies or switching browser resets
+nothing. Both per-student and a deployment-wide daily spend ceiling.
+
+**A class is saved every turn**, not at End call. Closing the tab, losing
+connection, or the server restarting no longer loses the conversation: the
+student is offered it back, and can either continue it or get its report.
+End call still writes the report; it is no longer the only thing that saves.
+A retried or double-tapped send carries an idempotency key, so it replays the
+stored answer instead of duplicating the turn and paying for it twice.
+
+**Metrics** go to stderr as one JSON line per turn — token counts split by
+cache read and write, cost estimate, internal id. Deliberately no transcript,
+no name, no key: a log carrying class content would be a second copy of the
+student's data somewhere nobody is guarding. Visible in Render's log viewer,
+and greppable for `"event": "turn"`.
 
 ## What this does and doesn't prove
 

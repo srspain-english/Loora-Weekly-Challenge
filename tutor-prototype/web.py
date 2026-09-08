@@ -131,6 +131,34 @@ INDEX_HTML = """<!doctype html>
   #feedback-btn{margin-left:auto;padding:6px 14px;font-size:12px}
   #feedback-panel{margin-bottom:18px}
   #feedback-thanks{color:var(--muted);font-size:13px;margin-top:8px}
+  .status{
+    display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);
+    margin-top:10px;min-height:18px;
+  }
+  .status .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0}
+  .status.waking .dot{background:#C8871B;animation:pulse 1.4s ease-in-out infinite}
+  .status.offline .dot{background:#B0392A}
+  .status.saved .dot{background:#4E7A3A}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  @media (prefers-reduced-motion:reduce){.status.waking .dot{animation:none}}
+  .notice{
+    background:var(--accent-tint);border:1px solid var(--accent);border-radius:12px;
+    padding:14px 16px;margin-bottom:16px;font-size:13.5px;color:var(--ink-soft);
+  }
+  .notice h2{font-size:14px;margin:0 0 6px}
+  .notice .row{margin-top:10px}
+  .privacy{
+    margin-top:18px;padding-top:14px;border-top:1px solid var(--line);
+    font-size:12.5px;color:var(--muted);line-height:1.55;
+  }
+  .privacy summary{cursor:pointer;color:var(--ink-soft);font-weight:500}
+  .privacy ul{margin:8px 0 0;padding-left:18px}
+  .privacy li{margin-bottom:4px}
+  #mic-btn.recording{position:relative}
+  #mic-btn.recording::after{
+    content:"";position:absolute;inset:-4px;border-radius:50%;
+    border:2px solid #B0392A;animation:pulse 1.2s ease-in-out infinite;
+  }
   @media (prefers-color-scheme: dark){
     :root{
       --bg:#161310; --bg-sunk:#1E1A15; --card:#211D18;
@@ -167,9 +195,22 @@ INDEX_HTML = """<!doctype html>
     <div class="error" id="auth-error"></div>
   </div>
 
+  <div id="resume-notice" class="notice" style="display:none">
+    <h2>You have an unfinished class</h2>
+    <p id="resume-detail">Started earlier and never closed.</p>
+    <div class="row">
+      <button id="resume-btn">Continue it</button>
+      <button class="ghost" id="resume-report-btn">Just get my report</button>
+      <button class="ghost" id="resume-discard-btn">Discard</button>
+    </div>
+  </div>
+
   <div id="setup-screen" class="panel">
     <label for="student">Student name</label>
     <input type="text" id="student" placeholder="e.g. maria">
+
+    <label for="student-code">Your personal code <span style="text-transform:none;color:var(--muted)">(optional — lets Juno recognise you on any device)</span></label>
+    <input type="text" id="student-code" placeholder="Leave empty if your teacher hasn't given you one">
 
     <label for="mode">Mode</label>
     <select id="mode">
@@ -195,6 +236,20 @@ INDEX_HTML = """<!doctype html>
       <button id="start-btn">Start call</button>
     </div>
     <div class="error" id="start-error"></div>
+    <div class="status" id="setup-status"><span class="dot"></span><span id="setup-status-text"></span></div>
+
+    <div class="privacy">
+      <details>
+        <summary>What Juno saves about you</summary>
+        <ul>
+          <li><b>What it keeps:</b> your first name, your level, the transcript of each class, and the report at the end — corrections, vocabulary, and what to work on next.</li>
+          <li><b>What it is for:</b> so Juno remembers you between classes and does not repeat what you already know. Nothing else.</li>
+          <li><b>Who can see it:</b> you, and your teacher at S&amp;R Spain. It is not shared with anyone else and is not used to train anything.</li>
+          <li><b>Please do not type confidential information</b> — real client names, personal data about colleagues, anything under NDA. Practise with the situation, not the specifics.</li>
+          <li><b>To have your data deleted:</b> ask your teacher and it is removed.</li>
+        </ul>
+      </details>
+    </div>
   </div>
 
   <div id="chat-screen" class="panel">
@@ -207,6 +262,7 @@ INDEX_HTML = """<!doctype html>
     <div class="voice-row">
       <label><input type="checkbox" id="speak-toggle" checked> Juno speaks replies aloud</label>
     </div>
+    <div class="status" id="chat-status"><span class="dot"></span><span id="chat-status-text"></span></div>
     <div class="row" style="margin-top:12px;justify-content:flex-end">
       <button class="ghost" id="end-btn">End call</button>
     </div>
@@ -228,17 +284,71 @@ let scenarios = null;
 let recognition = null;
 let recognitionActive = false;
 
-async function api(path, body) {
-  const res = await fetch(path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body || {}),
-    credentials: 'same-origin',
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+// Three failures look identical to a student and need different words:
+// the free tier waking up (wait), no connection (check your wifi), and a
+// real error (tell your teacher). ApiError carries which one it was.
+class ApiError extends Error {
+  constructor(message, kind) { super(message); this.kind = kind; }
+}
+
+// Render idles the free instance out; the first request after that can take
+// most of a minute. Anything slower than this is worth telling the student
+// about rather than leaving them looking at a dead button.
+const WAKING_AFTER_MS = 3000;
+
+async function api(path, body, opts) {
+  const onWaking = (opts || {}).onWaking;
+  const timer = onWaking ? setTimeout(onWaking, WAKING_AFTER_MS) : null;
+  let res;
+  try {
+    res = await fetch(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body || {}),
+      credentials: 'same-origin',
+    });
+  } catch (e) {
+    // fetch only rejects for network-level failures, never for a 4xx/5xx.
+    throw new ApiError(
+      navigator.onLine === false
+        ? 'You appear to be offline. Your class is saved — reconnect and continue.'
+        : "Couldn't reach Juno. Check your connection and try again — your class is saved.",
+      'network');
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+
+  let data;
+  try {
+    data = await res.json();
+  } catch (e) {
+    throw new ApiError('Juno sent something unexpected. Please try again.', 'server');
+  }
+  if (!res.ok) {
+    throw new ApiError(data.error || 'Something went wrong.',
+                       res.status === 429 ? 'limit' : 'server');
+  }
   return data;
 }
+
+function setStatus(el, text, kind) {
+  const box = $(el), label = $(el + '-text');
+  if (!box || !label) return;
+  box.className = 'status' + (kind ? ' ' + kind : '');
+  label.textContent = text || '';
+}
+
+let lastSavedAt = null;
+function showSaved(iso) {
+  if (iso) lastSavedAt = new Date(iso);
+  if (!lastSavedAt) return;
+  const secs = Math.round((Date.now() - lastSavedAt.getTime()) / 1000);
+  const when = secs < 10 ? 'just now'
+    : secs < 90 ? `${secs}s ago`
+    : `${Math.round(secs / 60)} min ago`;
+  setStatus('chat-status', `Saved ${when}`, 'saved');
+}
+setInterval(() => { if (lastSavedAt) showSaved(); }, 15000);
 
 function show(id) {
   ['auth-screen', 'setup-screen', 'chat-screen', 'report-screen'].forEach(
@@ -334,28 +444,61 @@ function setupVoiceInput() {
   recognition.onresult = (e) => {
     $('msg-input').value = e.results[0][0].transcript;
   };
-  recognition.onerror = () => { recognitionActive = false; $('mic-btn').classList.remove('recording'); };
-  recognition.onend = () => { recognitionActive = false; $('mic-btn').classList.remove('recording'); };
+  const stopIndicator = () => {
+    recognitionActive = false;
+    $('mic-btn').classList.remove('recording');
+    $('mic-btn').setAttribute('aria-label', 'Hold or tap to talk');
+    if (lastSavedAt) showSaved(); else setStatus('chat-status', '');
+  };
+  recognition.onerror = stopIndicator;
+  recognition.onend = stopIndicator;
 
   const micBtn = $('mic-btn');
   micBtn.style.display = 'flex';
-  const start = (e) => {
-    e.preventDefault();
+
+  // Two ways to record, because hold-to-talk alone is genuinely awkward for a
+  // long sentence in a language you are still finding your words in: hold the
+  // button, or tap it once to start and once to stop. A short press that
+  // released almost immediately is read as a tap and leaves recording on.
+  let pressedAt = 0;
+  const TAP_MS = 350;
+
+  const begin = () => {
     if (recognitionActive) return;
     recognitionActive = true;
     micBtn.classList.add('recording');
+    micBtn.setAttribute('aria-label', 'Recording — tap to stop');
+    setStatus('chat-status', 'Listening…', 'waking');
     try { recognition.start(); } catch (err) { /* already started, ignore */ }
   };
-  const stop = (e) => {
-    e.preventDefault();
+  const finish = () => {
     if (!recognitionActive) return;
     recognition.stop();
   };
-  micBtn.addEventListener('mousedown', start);
-  micBtn.addEventListener('touchstart', start);
-  micBtn.addEventListener('mouseup', stop);
-  micBtn.addEventListener('mouseleave', stop);
-  micBtn.addEventListener('touchend', stop);
+
+  const onDown = (e) => {
+    e.preventDefault();
+    if (recognitionActive) { finish(); return; }  // tap again to stop
+    pressedAt = Date.now();
+    begin();
+  };
+  const onUp = (e) => {
+    e.preventDefault();
+    // Released quickly: treat it as a tap and keep listening.
+    if (Date.now() - pressedAt < TAP_MS) return;
+    finish();
+  };
+
+  micBtn.addEventListener('mousedown', onDown);
+  micBtn.addEventListener('touchstart', onDown);
+  micBtn.addEventListener('mouseup', onUp);
+  micBtn.addEventListener('touchend', onUp);
+  micBtn.addEventListener('keydown', (e) => {
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      recognitionActive ? finish() : begin();
+    }
+  });
 }
 
 // Try an empty passphrase first - if no access code is configured server-side,
@@ -367,9 +510,66 @@ api('/api/auth', { passphrase: '' }).then(() => {
   $('lede').textContent = 'A live practice call, corrected as you go. Enter the access code to begin.';
 });
 
+async function checkForUnfinishedClass() {
+  try {
+    const data = await api('/api/resume', {
+      access_code: $('student-code') ? $('student-code').value : null,
+    });
+    if (!data.open_call) return;
+    const call = data.open_call;
+    pendingResume = call;
+    const when = new Date(call.updated_at).toLocaleString();
+    $('resume-detail').textContent =
+      `${call.turns} message${call.turns === 1 ? '' : 's'}, last saved ${when}.`;
+    $('resume-notice').style.display = 'block';
+  } catch (e) {
+    // Nothing to recover, or we couldn't ask. Either way the student can
+    // just start a new class; this is never worth an error in their face.
+  }
+}
+
+let pendingResume = null;
+
+$('resume-btn').onclick = () => {
+  if (!pendingResume) return;
+  currentCallId = pendingResume.call_id;
+  classInProgress = true;
+  $('chat-log').innerHTML = '';
+  pendingResume.transcript.forEach((m) => {
+    bubble(m.role === 'user' ? 'you' : 'juno', m.content);
+  });
+  showSaved(pendingResume.updated_at);
+  $('resume-notice').style.display = 'none';
+  show('chat-screen');
+};
+
+$('resume-report-btn').onclick = async () => {
+  if (!pendingResume) return;
+  $('resume-report-btn').disabled = true;
+  try {
+    const data = await api('/api/end', { call_id: pendingResume.call_id });
+    classInProgress = false;
+    renderRecap(data.report);
+    $('resume-notice').style.display = 'none';
+    show('report-screen');
+  } catch (e) {
+    $('start-error').textContent = e.message;
+  } finally {
+    $('resume-report-btn').disabled = false;
+  }
+};
+
+$('resume-discard-btn').onclick = async () => {
+  try { await api('/api/abandon', {}); } catch (e) { /* nothing to undo */ }
+  pendingResume = null;
+  classInProgress = false;
+  $('resume-notice').style.display = 'none';
+};
+
 function afterAuth() {
   $('feedback-btn').style.display = 'inline-block';
   show('setup-screen');
+  checkForUnfinishedClass();
   fetch('/scenarios.json', { credentials: 'same-origin' }).then((r) => r.json()).then((data) => {
     scenarios = data;
     if (!scenarios.business_packs) throw new Error('scenarios.json is an old version.');
@@ -411,8 +611,10 @@ $('mode').onchange = () => {
 };
 
 $('start-btn').onclick = async () => {
+  if ($('start-btn').disabled) return;   // no double-starts
   $('start-error').textContent = '';
   $('start-btn').disabled = true;
+  setStatus('setup-status', 'Connecting…');
   try {
     const mode = $('mode').value;
     // "pack:<id>" means any scenario from that sector; a bare value is one
@@ -420,38 +622,71 @@ $('start-btn').onclick = async () => {
     const choice = mode === 'business' ? $('scenario').value : '';
     const data = await api('/api/start', {
       student: $('student').value || 'demo',
+      access_code: $('student-code') ? $('student-code').value : null,
       mode,
       level: $('level').value,
       scenario_id: choice.startsWith('pack:') ? null : (choice || null),
       pack: choice.startsWith('pack:') ? choice.slice(5) : null,
-    });
+    }, { onWaking: () => setStatus('setup-status',
+        'Juno is waking up — this takes up to a minute after a quiet spell.',
+        'waking') });
+    currentCallId = data.call_id;
+    classInProgress = true;
     $('chat-log').innerHTML = '';
     bubble('juno', data.reply);
     speak(data.reply);
+    showSaved(data.saved_at);
+    setStatus('setup-status', '');
     show('chat-screen');
   } catch (e) {
     $('start-error').textContent = e.message;
+    setStatus('setup-status', '', e.kind === 'network' ? 'offline' : '');
   } finally {
     $('start-btn').disabled = false;
   }
 };
 
+let sending = false;
+let currentCallId = null;
+let classInProgress = false;
+
 async function sendMessage() {
+  if (sending) return;               // a second Enter while the first is in flight
   const input = $('msg-input');
   const text = input.value.trim();
   if (!text) return;
+
+  // Generated once per attempt and reused if we retry, so the server can
+  // recognise a repeat instead of adding the same turn twice.
+  const key = `${currentCallId || 'call'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  sending = true;
   bubble('you', text);
   input.value = '';
   $('send-btn').disabled = true;
+  $('msg-input').disabled = true;
   $('chat-error').textContent = '';
+  setStatus('chat-status', 'Juno is thinking…');
   try {
-    const data = await api('/api/message', { text });
+    const data = await api('/api/message', { text, idempotency_key: key },
+      { onWaking: () => setStatus('chat-status',
+          'Juno is waking up — one moment.', 'waking') });
     bubble('juno', data.reply);
     speak(data.reply);
+    showSaved(data.saved_at);
+    if (data.turns_left !== undefined && data.turns_left <= 5) {
+      $('chat-error').textContent =
+        `${data.turns_left} messages left in this class — press End call when you're ready for your report.`;
+    }
   } catch (e) {
     $('chat-error').textContent = e.message;
+    setStatus('chat-status',
+      e.kind === 'network' ? 'Not connected — your class is saved.' : '',
+      e.kind === 'network' ? 'offline' : 'saved');
   } finally {
+    sending = false;
     $('send-btn').disabled = false;
+    $('msg-input').disabled = false;
     input.focus();
   }
 }
@@ -475,17 +710,35 @@ function renderRecap(r) {
 }
 
 $('end-btn').onclick = async () => {
+  if ($('end-btn').disabled) return;
   $('end-btn').disabled = true;
+  $('send-btn').disabled = true;
+  $('chat-error').textContent = '';
+  // The report reads the whole conversation back, so it is the slowest thing
+  // in the app - saying so beats a button that looks broken.
+  setStatus('chat-status', 'Writing your report — this takes a few seconds…', 'waking');
   try {
-    const data = await api('/api/end', {});
+    const data = await api('/api/end', { call_id: currentCallId });
+    classInProgress = false;
     renderRecap(data.report);
+    setStatus('chat-status', '');
     show('report-screen');
   } catch (e) {
     $('chat-error').textContent = e.message;
+    setStatus('chat-status', 'Your class is saved — you can try again.', 'saved');
   } finally {
     $('end-btn').disabled = false;
+    $('send-btn').disabled = false;
   }
 };
+
+// Closing the tab mid-class no longer loses anything, but the report is only
+// written on End call, so it is still worth a word.
+window.addEventListener('beforeunload', (e) => {
+  if (!classInProgress) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 $('again-btn').onclick = () => show('setup-screen');
 
