@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Formación de inglés para empresas en Valladolid | S&amp;R Spain</title>
+<meta name="description" content="Inglés de negocio para equipos de empresas medianas en Castilla y León. Planes a medida con informe mensual de progreso. Desde 25 €/hora.">
+<link rel="canonical" href="https://srspain.es/empresas">
+<meta property="og:title" content="Formación de inglés para empresas | S&amp;R Spain">
+<meta property="og:description" content="Planes a medida con informe mensual de progreso, para equipos que trabajan con clientes internacionales.">
+<meta property="og:url" content="https://srspain.es/empresas">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#12161C;
+  --ink-soft:#1B212A;
+  --cream:#F3EEE4;
+  --cream-dim:#CFC8BA;
+  --amber:#B9762C;
+  --amber-light:#D08F41;
+  --line:rgba(243,238,228,.14);
+  --maxw:1080px;
+  --serif:"Instrument Serif",Georgia,serif;
+  --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--ink);color:var(--cream);
+  font-family:var(--sans);font-size:17px;line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px}
+a{color:inherit}
+
+/* NAV */
+.nav{position:sticky;top:0;z-index:20;background:rgba(18,22,28,.88);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.nav .wrap{display:flex;align-items:center;justify-content:space-between;height:68px;gap:24px}
+.brand{font-family:var(--serif);font-size:22px;letter-spacing:.01em;text-decoration:none}
+.navlinks{display:flex;gap:26px;font-size:14.5px}
+.navlinks a{color:var(--cream-dim);text-decoration:none}
+.navlinks a:hover,.navlinks a:focus-visible{color:var(--amber-light)}
+@media(max-width:640px){.navlinks{gap:16px;font-size:13.5px}.brand{font-size:19px}}
+
+/* SHARED */
+section{padding:92px 0;border-bottom:1px solid var(--line)}
+.eyebrow{font-size:12.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--amber-light);margin:0 0 22px}
+h1,h2,h3{font-family:var(--serif);font-weight:400;letter-spacing:-.01em;margin:0}
+h1{font-size:clamp(2.6rem,6.2vw,4.3rem);line-height:1.08}
+h2{font-size:clamp(2rem,4.4vw,3rem);line-height:1.14;margin-bottom:26px}
+h3{font-size:1.45rem;line-height:1.3;margin-bottom:10px}
+p{margin:0 0 20px;max-width:62ch}
+em{font-style:italic;color:var(--amber-light)}
+
+/* BUTTONS */
+.btn{display:inline-block;padding:14px 30px;border-radius:2px;text-decoration:none;font-size:15.5px;font-weight:500}
+.btn-solid{background:var(--amber);color:#fff}
+.btn-solid:hover,.btn-solid:focus-visible{background:var(--amber-light)}
+.btn-ghost{border:1px solid var(--line);color:var(--cream)}
+.btn-ghost:hover,.btn-ghost:focus-visible{border-color:var(--amber-light);color:var(--amber-light)}
+a:focus-visible,.btn:focus-visible{outline:2px solid var(--amber-light);outline-offset:3px}
+
+/* HERO */
+.hero{padding:108px 0 96px}
+.hero p.lede{font-size:1.15rem;color:var(--cream-dim);margin:30px 0 36px;max-width:52ch}
+.hero .actions{display:flex;gap:14px;flex-wrap:wrap}
+
+/* STATS */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:44px}
+.stat .num{font-family:var(--serif);font-size:3.4rem;line-height:1;color:var(--amber-light);display:block;margin-bottom:12px}
+.stat p{font-size:15.5px;color:var(--cream-dim);margin:0}
+@media(max-width:720px){.stats{grid-template-columns:1fr;gap:34px}}
+
+/* INCLUDE LIST */
+.steps{display:grid;gap:2px;background:var(--line);border:1px solid var(--line)}
+.step{background:var(--ink);padding:34px 32px;display:grid;grid-template-columns:64px 1fr;gap:8px}
+.step .n{font-family:var(--serif);font-size:1.5rem;color:var(--amber)}
+.step p{color:var(--cream-dim);margin:0;font-size:16px}
+@media(max-width:640px){.step{grid-template-columns:1fr;gap:14px;padding:28px 24px}}
+
+/* TAGS */
+.tags{display:flex;flex-wrap:wrap;gap:10px;margin-top:30px}
+.tag{border:1px solid var(--line);padding:7px 15px;font-size:13.5px;color:var(--cream-dim);border-radius:2px}
+
+/* WHY */
+.why p{color:var(--cream-dim)}
+
+/* PRICE */
+.price{background:var(--ink-soft)}
+.pricerow{display:flex;justify-content:space-between;align-items:baseline;gap:20px;padding:20px 0;border-bottom:1px solid var(--line);max-width:640px}
+.pricerow span:first-child{font-size:16.5px}
+.pricerow span:last-child{font-family:var(--serif);font-size:1.55rem;color:var(--amber-light);white-space:nowrap}
+.demo{margin:26px 0 34px;color:var(--cream-dim)}
+
+/* FOOTER */
+footer{padding:56px 0;font-size:14.5px;color:var(--cream-dim)}
+footer .wrap{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+footer a{color:var(--cream-dim);text-decoration:none;margin-left:20px}
+footer a:first-child{margin-left:0}
+footer a:hover,footer a:focus-visible{color:var(--amber-light)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="/">S&amp;R Spain</a>
+    <div class="navlinks">
+      <a href="/">Inicio</a>
+      <a href="#incluye">El programa</a>
+      <a href="#loora">Loora</a>
+      <a href="#precio">Precio</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>Tu equipo lleva meses<br>de clases de inglés.<br><em>¿Puedes demostrar<br>que han mejorado?</em></h1>
+    <p class="lede">Planes construidos sobre las situaciones reales de tu empresa. Con informe mensual de progreso que puedes llevar a dirección.</p>
+    <div class="actions">
+      <a class="btn btn-solid" href="mailto:s.r.valladolid@zmail.com?subject=Formaci%C3%B3n%20de%20ingl%C3%A9s%20para%20empresas">Hablemos</a>
+      <a class="btn btn-ghost" href="#incluye">Ver el programa</a>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap stats">
+    <div class="stat"><span class="num">6</span><p>Meses. El plazo mínimo para ver resultados medibles.</p></div>
+    <div class="stat"><span class="num">1</span><p>Informe de progreso cada mes, por participante.</p></div>
+    <div class="stat"><span class="num">0</span><p>Estructura de franquicia. Trato directo conmigo.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <p class="eyebrow">Para quién es</p>
+    <h2>Empresas que ya trabajan<br>fuera de España.</h2>
+    <p>Responsables de formación, RRHH y dirección en empresas medianas de Castilla y León con operación internacional.</p>
+    <p>Equipos que ya tratan con clientes fuera de España y necesitan sostener llamadas, correos, negociaciones y presentaciones en inglés sin depender de traducción.</p>
+  </div>
+</section>
+
+<section id="incluye">
+  <div class="wrap">
+    <p class="eyebrow">Qué incluye</p>
+    <h2>Cómo trabajamos<br>durante los seis meses.</h2>
+    <div class="steps">
+      <div class="step"><div class="n">01</div><div><h3>Diagnóstico inicial</h3><p>Sesión con la dirección de tu equipo para mapear el nivel actual, los retos reales del negocio y qué resultados quieres a seis meses.</p></div></div>
+      <div class="step"><div class="n">02</div><div><h3>Plan a medida</h3><p>Grupos e individuales diseñados sobre los roles y la operativa de tu empresa. No una plantilla estándar.</p></div></div>
+      <div class="step"><div class="n">03</div><div><h3>Informe mensual</h3><p>Por participante: avance real, mejora en la interacción con cliente, asistencia y prioridades del mes siguiente.</p></div></div>
+      <div class="step"><div class="n">04</div><div><h3>Ajuste continuo</h3><p>El plan se corrige según lo que tus equipos reporten que está funcionando.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="loora">
+  <div class="wrap">
+    <p class="eyebrow">Práctica oral con IA</p>
+    <h2>Tu equipo practica<br>entre sesión y <em>sesión.</em></h2>
+    <p>Cada semana, cada participante recibe un reto de conversación diseñado sobre su trabajo real: una reunión difícil, una negociación, una presentación ante cliente.</p>
+    <p>Lo practican en voz alta con Loora, una IA de conversación, tantas veces como quieran. Sin horas extra de profesor, sin coste adicional para la empresa.</p>
+    <p>Las horas de clase se dedican a lo que necesita un coach humano. La repetición y la pérdida del miedo a hablar se trabajan fuera.</p>
+    <div class="tags">
+      <span class="tag">Reuniones</span>
+      <span class="tag">Negociación</span>
+      <span class="tag">Presentaciones</span>
+      <span class="tag">Clientes difíciles</span>
+      <span class="tag">Práctica ilimitada</span>
+    </div>
+  </div>
+</section>
+
+<section class="why">
+  <div class="wrap">
+    <p class="eyebrow">Por qué funciona</p>
+    <h2>No es el modelo<br>de una academia.</h2>
+    <p>Trabajas directamente con un ESL Coach y excoordinador académico que conoce la cultura empresarial española.</p>
+    <p>Sin sobrecoste de franquicia. Con una prueba de progreso cada mes que puedes presentar a dirección.</p>
+    <p>Feedback humano real. No algoritmos.</p>
+  </div>
+</section>
+
+<section class="price" id="precio">
+  <div class="wrap">
+    <p class="eyebrow">Precio</p>
+    <h2>Claro desde el principio.</h2>
+    <div class="pricerow"><span>Módulos de grupo</span><span>desde 25 €/hora</span></div>
+    <div class="pricerow"><span>Planes individuales, seguimiento e informes incluidos</span><span>desde 130 €/mes</span></div>
+    <p class="demo">Clase de demostración gratuita antes de contratar.</p>
+    <a class="btn btn-solid" href="mailto:s.r.valladolid@zmail.com?subject=Formaci%C3%B3n%20de%20ingl%C3%A9s%20para%20empresas">Hablemos</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>© 2026 S&amp;R Spain · Carlos Salazar</div>
+    <div>
+      <a href="https://www.linkedin.com/in/carlos-salazar-lizarazo-9a466425/">LinkedIn</a>
+      <a href="https://www.instagram.com/hablelikeanative">Instagram</a>
+      <a href="mailto:s.r.valladolid@zmail.com">Email</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
