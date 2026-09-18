@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S&R Spain · Loora Weekly Challenge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { min-height: 100%; background: #E8E2D4; }
+  body { font-family: 'Instrument Sans', system-ui, sans-serif; color: #17130E; padding: 40px 20px; }
+  .wrap { max-width: 660px; margin: 0 auto; background: #FFFDF9; border-radius: 26px; overflow: hidden; box-shadow: 0 30px 60px -30px rgba(23,19,14,.45); border: 1px solid #EFE8D9; }
+
+  .header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 30px; border-bottom: 1px solid #EFE8D9; }
+  .brand { display: flex; align-items: baseline; gap: 8px; }
+  .brand-sr { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 20px; color: #17130E; }
+  .brand-sub { font-weight: 500; font-size: 20px; color: #8B8073; }
+  .toggle { display: inline-flex; padding: 3px; background: #F2ECDE; border-radius: 999px; gap: 2px; }
+  .toggle button { border: none; cursor: pointer; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; letter-spacing: .04em; padding: 6px 14px; border-radius: 999px; transition: all .15s ease; }
+  .btn-active { background: #17130E !important; color: #FFFDF9 !important; }
+  .btn-idle { background: transparent !important; color: #8B8073 !important; }
+
+  .hero { background: #17130E; color: #F6F1E7; padding: 44px 30px 40px; position: relative; overflow: hidden; }
+  .hero-deco { position: absolute; top: -20px; right: -10px; font-size: 140px; line-height: 1; color: rgba(255,74,28,.09); pointer-events: none; user-select: none; }
+  .hero-eyebrow { text-transform: uppercase; letter-spacing: .18em; font-size: 12px; font-weight: 600; color: #FF6A42; position: relative; }
+  .hero h1 { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 42px; line-height: 1.05; letter-spacing: -.02em; margin: 14px 0 16px; max-width: 16ch; position: relative; }
+  .hero-body { font-size: 16px; line-height: 1.65; color: #CFC7B8; max-width: 52ch; position: relative; }
+  .hero-body strong { color: #F6F1E7; }
+
+  .reminders { padding: 24px 30px; border-bottom: 1px solid #EFE8D9; }
+  .section-label { text-transform: uppercase; letter-spacing: .14em; font-size: 11px; font-weight: 700; color: #B0392A; margin-bottom: 14px; }
+  .tip { display: flex; align-items: flex-start; gap: 10px; font-size: 15px; line-height: 1.5; color: #3A332A; margin-bottom: 10px; }
+  .tip:last-child { margin-bottom: 0; }
+  .dot { color: #FF4A1C; font-size: 12px; line-height: 1.6; flex-shrink: 0; }
+
+  .level-beginner { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #E8F5E9; color: #2E7D32; border: 1px solid #C8E6C9; }
+  .level-intermediate { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #FFF3E0; color: #E65100; border: 1px solid #FFE0B2; }
+  .level-advanced { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #FCE4EC; color: #C62828; border: 1px solid #F8BBD0; }
+
+  .challenges { padding: 28px 30px 8px; }
+  .challenges-heading { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 21px; letter-spacing: -.01em; color: #17130E; margin-bottom: 20px; }
+  .card { border: 1px solid #EDE5D5; border-radius: 18px; padding: 20px 20px 18px; background: #fff; margin-bottom: 16px; }
+  .card-top { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 6px; }
+  .card-num { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 34px; border-radius: 9px; background: #17130E; color: #FFFDF9; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+  .card-emoji { font-size: 22px; line-height: 1.5; flex-shrink: 0; }
+  .card-right { display: flex; flex-direction: column; gap: 6px; padding-top: 3px; }
+  .card-title { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 17px; line-height: 1.3; color: #17130E; }
+  .card-expression { font-size: 13px; color: #8B8073; font-style: italic; margin-bottom: 10px; }
+  .script-box { background: #FBF5EB; border: 1px solid #F1E7D6; border-left: 3px solid #FF4A1C; border-radius: 11px; padding: 13px 15px; margin-top: 12px; }
+  .script-label { text-transform: uppercase; letter-spacing: .12em; font-size: 10px; font-weight: 700; color: #C13D28; margin-bottom: 8px; }
+  .script-text { font-size: 14.5px; line-height: 1.6; color: #2E2820; font-style: italic; }
+
+  .closing-banner { margin: 22px 30px 28px; background: #FF4A1C; color: #FFF7F2; border-radius: 18px; padding: 24px 22px; text-align: center; }
+  .closing-icon { font-size: 28px; line-height: 1; margin-bottom: 10px; }
+  .closing-msg { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 18px; line-height: 1.4; max-width: 32ch; margin: 0 auto; }
+
+  .footer { padding: 18px 30px 24px; border-top: 1px solid #EFE8D9; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .footer-note { font-size: 13px; color: #8B8073; }
+  .footer-brand { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; color: #17130E; }
+
+  @media (max-width: 500px) {
+    body { padding: 16px 10px; }
+    .hero h1 { font-size: 30px; }
+    .header, .reminders, .challenges, .footer { padding-left: 18px; padding-right: 18px; }
+    .closing-banner { margin-left: 18px; margin-right: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="brand"><span class="brand-sr">S&amp;R</span><span class="brand-sub">Spain</span></div>
+    <div class="toggle">
+      <button id="btn-en" class="btn-active" onclick="setLang('en')">EN</button>
+      <button id="btn-es" class="btn-idle" onclick="setLang('es')">ES</button>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="hero-deco">💼</div>
+    <div class="hero-eyebrow" id="eyebrow">Loora · Weekly Challenge</div>
+    <h1 id="hero-title">The Words That Do the Work.</h1>
+    <p class="hero-body" id="hero-body"><strong>Hi everyone!</strong> Nine expressions this week, all taken from real business and hospitality situations — the kind you actually use with guests, colleagues and managers. Find your level and start speaking. 💼🍷</p>
+  </div>
+
+  <div class="reminders">
+    <div class="section-label" id="rem-label">Remember</div>
+    <div id="rem-list"></div>
+  </div>
+
+  <div class="challenges">
+    <div class="challenges-heading" id="ch-heading">This week's challenges</div>
+    <div id="ch-list"></div>
+  </div>
+
+  <div class="closing-banner">
+    <div class="closing-icon">💎</div>
+    <div class="closing-msg" id="closing">Nine expressions. One week. Use them until they feel like yours.</div>
+  </div>
+
+  <div class="footer">
+    <span class="footer-note" id="footer-note">S&amp;R Spain · Loora Weekly Challenge</span>
+    <span class="footer-brand">srspain.es</span>
+  </div>
+</div>
+
+<script>
+const SCRIPTS = [
+  'I want to practice the expression TO LOOK UP in English. Act as my colleague at a luxury hotel. Ask me simple questions about things I have to look up at work — guest information, restaurant recommendations, prices, local events, opening times. Use the expression naturally and correct me gently if I make a mistake. Speak slowly and clearly.',
+  'I want to practice the expression TO KEEP UP in English. Act as my colleague at work. Ask me questions about how I keep up — with emails, with busy shifts, with new procedures, with my English. Use the expression naturally in your questions and correct me if I make a grammar mistake.',
+  'I want to practice the expression TO GET RID OF in English. Act as my manager at a hotel. Ask me simple questions about things we need to get rid of at work — old furniture, outdated procedures, bad habits, unnecessary paperwork. Correct my English gently and keep the conversation easy to follow.',
+  'I want to practice the expression TO POINT OUT in English. Act as my manager in a team meeting at a hotel. Ask me to point out problems, improvements and things that are going well. Then ask me about times a colleague or a guest has pointed something out to me. Push me to speak in full sentences and correct my English.',
+  'I want to practice the expression TO RUN INTO in English. Act as my colleague. Ask me about people I have run into recently — former colleagues, guests I recognised, people from my industry — and also about problems I have run into at work. Use both meanings of the expression and correct my grammar throughout.',
+  'I want to practice the expression TO TAKE ON in English. Act as my manager during a performance review. Ask me about responsibilities I have taken on this year, projects I would like to take on, and whether I ever take on too much. Push me to give detailed answers and correct my English.',
+  'I want to practice the expression TO ABIDE BY in English. Act as a senior manager at a luxury hotel. Ask me about the rules, standards and policies we have to abide by — service standards, safety regulations, confidentiality, company values. Push me to use sophisticated vocabulary and correct my English. Give me feedback at the end.',
+  'I want to practice the expression TO TELL SOMEONE OFF in English. Act as my mentor at work. Ask me about difficult moments when someone has been told off, or when I have had to tell a colleague off — and how I handled it professionally. Push me to tell real stories with detail and correct my English throughout.',
+  'I want to practice the expression TO WATCH OUT FOR in English. Act as an experienced colleague training me at a luxury hotel. Tell me about the things I need to watch out for — difficult guests, common mistakes, busy periods, competitors, details that are easy to miss. Ask me questions, push me to speak at length and give me a fluency score out of ten at the end.'
+];
+
+const DATA = {
+  en: {
+    eyebrow: 'Loora · Weekly Challenge',
+    title: 'The Words That Do the Work.',
+    body: '<strong>Hi everyone!</strong> Nine expressions this week, all taken from real business and hospitality situations — the kind you actually use with guests, colleagues and managers. Find your level and start speaking. 💼🍷',
+    remLabel: 'Remember',
+    reminders: [
+      'Tell Loora exactly what\'s written below — out loud!',
+      'Speak in full sentences.',
+      'Find your level — or challenge yourself with the next one up. 😎'
+    ],
+    chHeading: 'This week\'s challenges',
+    sayLabel: 'Tell Loora',
+    closing: 'Nine expressions. One week. Use them until they feel like yours.',
+    footerNote: 'S&R Spain · Loora Weekly Challenge',
+    challenges: [
+      { emoji: '🔍', title: 'Looking Up What Guests Need', expression: 'to look up', level: 'beginner' },
+      { emoji: '🏃', title: 'Keeping Up With a Busy Shift', expression: 'to keep up', level: 'beginner' },
+      { emoji: '🗑️', title: 'Getting Rid of What Doesn\'t Work', expression: 'to get rid of', level: 'beginner' },
+      { emoji: '👉', title: 'Pointing Things Out in a Meeting', expression: 'to point out', level: 'intermediate' },
+      { emoji: '👋', title: 'Running Into People and Problems', expression: 'to run into', level: 'intermediate' },
+      { emoji: '📋', title: 'Taking On New Responsibilities', expression: 'to take on', level: 'intermediate' },
+      { emoji: '⚖️', title: 'Standards We Abide By', expression: 'to abide by', level: 'advanced' },
+      { emoji: '😤', title: 'Being Told Off — and Handling It', expression: 'to tell someone off', level: 'advanced' },
+      { emoji: '👀', title: 'What to Watch Out For', expression: 'to watch out for', level: 'advanced' }
+    ]
+  },
+  es: {
+    eyebrow: 'Loora · Reto Semanal',
+    title: 'Las Palabras Que Trabajan.',
+    body: '<strong>¡Hola a todos!</strong> Nueve expresiones esta semana, todas sacadas de situaciones reales de negocios y hostelería — las que de verdad usas con clientes, compañeros y jefes. Encuentra tu nivel y empieza a hablar. 💼🍷',
+    remLabel: 'Recordad',
+    reminders: [
+      '¡Decidle a Loora exactamente lo que pone abajo — en voz alta!',
+      'Hablad en frases completas.',
+      'Encontrad vuestro nivel — o retaos con el siguiente. 😎'
+    ],
+    chHeading: 'Los retos de esta semana',
+    sayLabel: 'Dile a Loora 🇬🇧',
+    closing: 'Nueve expresiones. Una semana. Úsalas hasta que sean tuyas.',
+    footerNote: 'S&R Spain · Reto Semanal de Loora',
+    challenges: [
+      { emoji: '🔍', title: 'Buscar lo que el cliente necesita (Look Up)', expression: 'to look up', level: 'beginner' },
+      { emoji: '🏃', title: 'Seguir el ritmo de un turno intenso (Keep Up)', expression: 'to keep up', level: 'beginner' },
+      { emoji: '🗑️', title: 'Deshacerse de lo que no funciona (Get Rid Of)', expression: 'to get rid of', level: 'beginner' },
+      { emoji: '👉', title: 'Señalar cosas en una reunión (Point Out)', expression: 'to point out', level: 'intermediate' },
+      { emoji: '👋', title: 'Encontrarse con gente y con problemas (Run Into)', expression: 'to run into', level: 'intermediate' },
+      { emoji: '📋', title: 'Asumir nuevas responsabilidades (Take On)', expression: 'to take on', level: 'intermediate' },
+      { emoji: '⚖️', title: 'Normas que hay que cumplir (Abide By)', expression: 'to abide by', level: 'advanced' },
+      { emoji: '😤', title: 'Que te llamen la atención (Tell Someone Off)', expression: 'to tell someone off', level: 'advanced' },
+      { emoji: '👀', title: 'A qué hay que estar atento (Watch Out For)', expression: 'to watch out for', level: 'advanced' }
+    ]
+  }
+};
+
+const LEVEL_LABELS = {
+  en: { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced' },
+  es: { beginner: 'Principiante', intermediate: 'Intermedio', advanced: 'Avanzado' }
+};
+
+function render(lang) {
+  const d = DATA[lang];
+  document.getElementById('eyebrow').textContent = d.eyebrow;
+  document.getElementById('hero-title').textContent = d.title;
+  document.getElementById('hero-body').innerHTML = d.body;
+  document.getElementById('rem-label').textContent = d.remLabel;
+  document.getElementById('ch-heading').textContent = d.chHeading;
+  document.getElementById('closing').textContent = d.closing;
+  document.getElementById('footer-note').textContent = d.footerNote;
+
+  document.getElementById('rem-list').innerHTML = d.reminders.map(r =>
+    `<div class="tip"><span class="dot">◆</span><span>${r}</span></div>`
+  ).join('');
+
+  document.getElementById('ch-list').innerHTML = d.challenges.map((c, i) => `
+    <div class="card">
+      <div class="card-top">
+        <span class="card-num">${String(i+1).padStart(2,'0')}</span>
+        <span class="card-emoji">${c.emoji}</span>
+        <div class="card-right">
+          <span class="level-${c.level}">${LEVEL_LABELS[lang][c.level]}</span>
+          <span class="card-title">${c.title}</span>
+        </div>
+      </div>
+      <div class="card-expression">Expression: <em>${c.expression}</em></div>
+      <div class="script-box">
+        <div class="script-label">${d.sayLabel}</div>
+        <div class="script-text">"${SCRIPTS[i]}"</div>
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('btn-en').className = lang === 'en' ? 'btn-active' : 'btn-idle';
+  document.getElementById('btn-es').className = lang === 'es' ? 'btn-active' : 'btn-idle';
+}
+
+function setLang(lang) { render(lang); }
+render('en');
+</script>
+</body>
+</html>
