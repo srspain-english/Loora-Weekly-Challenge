@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S&R Spain · Loora Weekly Challenge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { min-height: 100%; background: #E8E2D4; }
+  body { font-family: 'Instrument Sans', system-ui, sans-serif; color: #17130E; padding: 40px 20px; }
+  .wrap { max-width: 660px; margin: 0 auto; background: #FFFDF9; border-radius: 26px; overflow: hidden; box-shadow: 0 30px 60px -30px rgba(23,19,14,.45); border: 1px solid #EFE8D9; }
+
+  .header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 30px; border-bottom: 1px solid #EFE8D9; }
+  .brand { display: flex; align-items: baseline; gap: 8px; }
+  .brand-sr { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 20px; color: #17130E; }
+  .brand-sub { font-weight: 500; font-size: 20px; color: #8B8073; }
+  .toggle { display: inline-flex; padding: 3px; background: #F2ECDE; border-radius: 999px; gap: 2px; }
+  .toggle button { border: none; cursor: pointer; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; letter-spacing: .04em; padding: 6px 14px; border-radius: 999px; transition: all .15s ease; }
+  .btn-active { background: #17130E !important; color: #FFFDF9 !important; }
+  .btn-idle { background: transparent !important; color: #8B8073 !important; }
+
+  .hero { background: linear-gradient(135deg, #1C1608 0%, #17130E 60%); color: #F6F1E7; padding: 44px 30px 40px; position: relative; overflow: hidden; }
+  .hero-deco { position: absolute; top: -18px; right: -6px; font-size: 140px; line-height: 1; color: rgba(212,160,23,.13); pointer-events: none; user-select: none; }
+  .hero-eyebrow { text-transform: uppercase; letter-spacing: .18em; font-size: 12px; font-weight: 600; color: #E0B23C; position: relative; }
+  .hero h1 { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 42px; line-height: 1.05; letter-spacing: -.02em; margin: 14px 0 16px; max-width: 16ch; position: relative; }
+  .hero-body { font-size: 16px; line-height: 1.65; color: #CFC7B8; max-width: 52ch; position: relative; }
+  .hero-body strong { color: #F6F1E7; }
+
+  .keys-banner { background: #FBF3DF; border-bottom: 1px solid #EFE0B8; padding: 16px 30px; display: flex; gap: 12px; align-items: flex-start; }
+  .keys-icon { font-size: 20px; flex-shrink: 0; line-height: 1.4; }
+  .keys-text { font-size: 14.5px; line-height: 1.6; color: #5C4A0B; }
+  .keys-text strong { color: #3D3006; }
+
+  .reminders { padding: 24px 30px; border-bottom: 1px solid #EFE8D9; }
+  .section-label { text-transform: uppercase; letter-spacing: .14em; font-size: 11px; font-weight: 700; color: #B0392A; margin-bottom: 14px; }
+  .tip { display: flex; align-items: flex-start; gap: 10px; font-size: 15px; line-height: 1.5; color: #3A332A; margin-bottom: 10px; }
+  .tip:last-child { margin-bottom: 0; }
+  .dot { color: #FF4A1C; font-size: 12px; line-height: 1.6; flex-shrink: 0; }
+
+  .level-beginner { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #E8F5E9; color: #2E7D32; border: 1px solid #C8E6C9; }
+  .level-intermediate { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #FFF3E0; color: #E65100; border: 1px solid #FFE0B2; }
+  .level-advanced { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #FCE4EC; color: #C62828; border: 1px solid #F8BBD0; }
+
+  .section-block { padding: 28px 30px 8px; }
+  .section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding: 14px 18px; border-radius: 14px; }
+  .sh-keys { background: #1C1608; color: #F6F1E7; }
+  .sh-everyday { background: #EEF6F0; color: #17130E; border: 1px solid #D4E8DA; }
+  .sh-business { background: #FBF5EB; color: #17130E; border: 1px solid #F1E7D6; }
+  .section-icon { font-size: 26px; line-height: 1; }
+  .section-title-block { display: flex; flex-direction: column; gap: 3px; }
+  .section-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px; line-height: 1.2; }
+  .section-subtitle { font-size: 13px; opacity: .7; }
+
+  .card { border: 1px solid #EDE5D5; border-radius: 18px; padding: 20px 20px 18px; background: #fff; margin-bottom: 16px; }
+  .card-top { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 6px; }
+  .card-num { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 34px; border-radius: 9px; background: #17130E; color: #FFFDF9; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+  .card-num-gold { background: #B8901E; }
+  .card-num-green { background: #3B7A52; }
+  .card-emoji { font-size: 22px; line-height: 1.5; flex-shrink: 0; }
+  .card-right { display: flex; flex-direction: column; gap: 6px; padding-top: 3px; }
+  .card-title { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 17px; line-height: 1.3; color: #17130E; padding-top: 4px; }
+  .card-title-tight { padding-top: 0; }
+  .card-expression { font-size: 13px; color: #8B8073; font-style: italic; margin-bottom: 10px; }
+  .script-box { background: #FBF5EB; border: 1px solid #F1E7D6; border-left: 3px solid #FF4A1C; border-radius: 11px; padding: 13px 15px; margin-top: 12px; }
+  .script-label { text-transform: uppercase; letter-spacing: .12em; font-size: 10px; font-weight: 700; color: #C13D28; margin-bottom: 8px; }
+  .script-text { font-size: 14.5px; line-height: 1.6; color: #2E2820; font-style: italic; }
+  .sb-gold { background: #1C1608; border: 1px solid #3A2F12; border-left: 3px solid #D4A017; }
+  .sl-gold { color: #E0B23C; }
+  .st-gold { color: #E4DCC8; }
+  .sb-green { background: #F3F9F4; border: 1px solid #D9EADF; border-left: 3px solid #3B7A52; }
+  .sl-green { color: #2E6741; }
+
+  .divider { height: 1px; background: #EFE8D9; margin: 8px 30px 0; }
+
+  .closing-banner { margin: 22px 30px 28px; background: linear-gradient(135deg, #B8901E 0%, #8A6A12 100%); color: #FFF9EC; border-radius: 18px; padding: 26px 22px; text-align: center; }
+  .closing-icon { font-size: 28px; line-height: 1; margin-bottom: 10px; }
+  .closing-msg { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 18px; line-height: 1.4; max-width: 34ch; margin: 0 auto; }
+
+  .footer { padding: 18px 30px 24px; border-top: 1px solid #EFE8D9; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .footer-note { font-size: 13px; color: #8B8073; }
+  .footer-brand { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; color: #17130E; }
+
+  @media (max-width: 500px) {
+    body { padding: 16px 10px; }
+    .hero h1 { font-size: 30px; }
+    .header, .reminders, .section-block, .footer, .keys-banner { padding-left: 18px; padding-right: 18px; }
+    .closing-banner { margin-left: 18px; margin-right: 18px; }
+    .divider { margin-left: 18px; margin-right: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <div class="brand"><span class="brand-sr">S&amp;R</span><span class="brand-sub">Spain</span></div>
+    <div class="toggle">
+      <button id="btn-en" class="btn-active" onclick="setLang('en')">EN</button>
+      <button id="btn-es" class="btn-idle" onclick="setLang('es')">ES</button>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="hero-deco">🔑</div>
+    <div class="hero-eyebrow" id="eyebrow">Loora · Weekly Challenge</div>
+    <h1 id="hero-title">Three Keys, and the Words for Everything Else.</h1>
+    <p class="hero-body" id="hero-body"><strong>Hi everyone!</strong> Big news this week — and English you can use every single day. Three sections: the Michelin Keys, everyday English, and business English. Pick your level and start speaking. 🔑🍷</p>
+  </div>
+
+  <div class="keys-banner">
+    <div class="keys-icon">🎉</div>
+    <div class="keys-text" id="keys-text"><strong>Three Michelin Keys — three years running.</strong> One of only five hotels in Spain. Let's learn to talk about it in English.</div>
+  </div>
+
+  <div class="reminders">
+    <div class="section-label" id="rem-label">Remember</div>
+    <div id="rem-list"></div>
+  </div>
+
+  <!-- SECTION 1: MICHELIN KEYS -->
+  <div class="section-block">
+    <div class="section-header sh-keys">
+      <span class="section-icon">🔑</span>
+      <div class="section-title-block">
+        <span class="section-title" id="s1-title">The Three Michelin Keys</span>
+        <span class="section-subtitle" id="s1-sub">Your news. Your story. In English.</span>
+      </div>
+    </div>
+    <div id="keys-list"></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- SECTION 2: EVERYDAY -->
+  <div class="section-block" style="padding-top: 28px;">
+    <div class="section-header sh-everyday">
+      <span class="section-icon">☕</span>
+      <div class="section-title-block">
+        <span class="section-title" id="s2-title">Everyday English</span>
+        <span class="section-subtitle" id="s2-sub">The words you'll use tomorrow</span>
+      </div>
+    </div>
+    <div id="everyday-list"></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- SECTION 3: BUSINESS -->
+  <div class="section-block" style="padding-top: 28px;">
+    <div class="section-header sh-business">
+      <span class="section-icon">💼</span>
+      <div class="section-title-block">
+        <span class="section-title" id="s3-title">Business English</span>
+        <span class="section-subtitle" id="s3-sub">Meetings, teams, standards</span>
+      </div>
+    </div>
+    <div id="business-list"></div>
+  </div>
+
+  <div class="closing-banner">
+    <div class="closing-icon">🔑</div>
+    <div class="closing-msg" id="closing">Big news is worth telling. Small words make it possible.</div>
+  </div>
+
+  <div class="footer">
+    <span class="footer-note" id="footer-note">S&amp;R Spain · Loora Weekly Challenge</span>
+    <span class="footer-brand">srspain.es</span>
+  </div>
+
+</div>
+
+<script>
+const KEYS_SCRIPTS = [
+  'Act as a guest at Abadía Retuerta who has heard we hold Three Michelin Keys. I work here. Ask me what they are and why we earned them. Correct my English as we go.',
+  'Act as a journalist. I work at Abadía Retuerta — a restored 12th-century abbey with 30 rooms over the vineyards, a Michelin-starred restaurant and a spa. Ask me what makes it exceptional. Push me to be specific.',
+  'I want a one-minute speaking challenge. Ask me to speak for one full minute about an achievement I am proud of at work. If I stop for more than three seconds, tell me to keep going. Give me feedback at the end.'
+];
+
+const EVERYDAY_SCRIPTS = [
+  'I want to practice TO FIGURE OUT in English. Act as my colleague. Ask me simple questions about things I had to figure out — at work, with technology, in daily life. Speak slowly and correct me gently.',
+  'I want to practice TO DROP BY in English. Act as a friend or colleague. Ask me about places I drop by regularly and people who drop by unannounced. Keep it casual and correct my grammar.',
+  'I want to practice TO BE UP TO in English. Act as a colleague I haven\'t seen in a while. Ask me what I have been up to recently — at work and outside work. Keep the conversation natural and correct my English.'
+];
+
+const BUSINESS_SCRIPTS = [
+  'I want to practice TO LIVE UP TO in English. Act as a demanding guest with high expectations. Ask me how our hotel lives up to its reputation, and about a time something did not. Correct my English.',
+  'I want to practice TO COME UP WITH in English. Act as my manager in a team meeting. Ask me to come up with ideas to improve the guest experience. Push me to explain them in full sentences.',
+  'I want to practice TO SET APART in English. Act as a luxury travel consultant. Ask me what sets our hotel apart from other five-star properties. Push me to use rich vocabulary and correct me.',
+  'I want to practice TO PULL OFF in English. Act as a senior colleague. Ask me about difficult things my team has managed to pull off at work. Push me to tell real stories and give me a fluency score out of ten at the end.'
+];
+
+const DATA = {
+  en: {
+    eyebrow: 'Loora · Weekly Challenge',
+    title: 'Three Keys, and the Words for Everything Else.',
+    body: '<strong>Hi everyone!</strong> Big news this week — and English you can use every single day. Three sections: the Michelin Keys, everyday English, and business English. Pick your level and start speaking. 🔑🍷',
+    keysText: '<strong>Three Michelin Keys — three years running.</strong> One of only five hotels in Spain. Let\'s learn to talk about it in English.',
+    remLabel: 'Remember',
+    reminders: [
+      'Tell Loora exactly what\'s written below — out loud!',
+      'Speak in full sentences.',
+      'Find your level — or challenge yourself with the next one up. 😎'
+    ],
+    s1Title: 'The Three Michelin Keys', s1Sub: 'Your news. Your story. In English.',
+    s2Title: 'Everyday English', s2Sub: 'The words you\'ll use tomorrow',
+    s3Title: 'Business English', s3Sub: 'Meetings, teams, standards',
+    sayLabel: 'Tell Loora',
+    closing: 'Big news is worth telling. Small words make it possible.',
+    footerNote: 'S&R Spain · Loora Weekly Challenge',
+    keys: [
+      { emoji: '🔑', title: 'The Guest Who Asks Why' },
+      { emoji: '📰', title: 'The Journalist' },
+      { emoji: '⏱️', title: 'One Minute on Something You\'re Proud Of' }
+    ],
+    everyday: [
+      { emoji: '🧩', title: 'Figuring Things Out', expression: 'to figure out', level: 'beginner' },
+      { emoji: '🚪', title: 'Dropping By', expression: 'to drop by', level: 'beginner' },
+      { emoji: '👋', title: 'What Have You Been Up To?', expression: 'to be up to', level: 'intermediate' }
+    ],
+    business: [
+      { emoji: '🎯', title: 'Living Up to a Reputation', expression: 'to live up to', level: 'intermediate' },
+      { emoji: '💡', title: 'Coming Up With Ideas', expression: 'to come up with', level: 'intermediate' },
+      { emoji: '👑', title: 'What Sets Us Apart', expression: 'to set apart', level: 'advanced' },
+      { emoji: '🎩', title: 'Pulling Off the Impossible', expression: 'to pull off', level: 'advanced' }
+    ]
+  },
+  es: {
+    eyebrow: 'Loora · Reto Semanal',
+    title: 'Tres Llaves, y las Palabras para Todo lo Demás.',
+    body: '<strong>¡Hola a todos!</strong> Gran noticia esta semana — e inglés que podéis usar cada día. Tres secciones: las Llaves Michelin, inglés cotidiano e inglés de negocios. Elegid vuestro nivel y a hablar. 🔑🍷',
+    keysText: '<strong>Tres Llaves Michelin — tercer año consecutivo.</strong> Uno de solo cinco hoteles en España. Aprendamos a contarlo en inglés.',
+    remLabel: 'Recordad',
+    reminders: [
+      '¡Decidle a Loora exactamente lo que pone abajo — en voz alta!',
+      'Hablad en frases completas.',
+      'Encontrad vuestro nivel — o retaos con el siguiente. 😎'
+    ],
+    s1Title: 'Las Tres Llaves Michelin', s1Sub: 'Vuestra noticia. Vuestra historia. En inglés.',
+    s2Title: 'Inglés Cotidiano', s2Sub: 'Las palabras que usaréis mañana',
+    s3Title: 'Inglés de Negocios', s3Sub: 'Reuniones, equipos, estándares',
+    sayLabel: 'Dile a Loora 🇬🇧',
+    closing: 'Las buenas noticias merecen contarse. Las palabras sencillas lo hacen posible.',
+    footerNote: 'S&R Spain · Reto Semanal de Loora',
+    keys: [
+      { emoji: '🔑', title: 'El cliente que pregunta por qué' },
+      { emoji: '📰', title: 'El periodista' },
+      { emoji: '⏱️', title: 'Un minuto sobre algo que te enorgullece' }
+    ],
+    everyday: [
+      { emoji: '🧩', title: 'Descubrir cómo funciona algo (Figure Out)', expression: 'to figure out', level: 'beginner' },
+      { emoji: '🚪', title: 'Pasarse un momento (Drop By)', expression: 'to drop by', level: 'beginner' },
+      { emoji: '👋', title: '¿Qué has estado haciendo? (Be Up To)', expression: 'to be up to', level: 'intermediate' }
+    ],
+    business: [
+      { emoji: '🎯', title: 'Estar a la altura (Live Up To)', expression: 'to live up to', level: 'intermediate' },
+      { emoji: '💡', title: 'Proponer ideas (Come Up With)', expression: 'to come up with', level: 'intermediate' },
+      { emoji: '👑', title: 'Lo que nos diferencia (Set Apart)', expression: 'to set apart', level: 'advanced' },
+      { emoji: '🎩', title: 'Sacar adelante lo imposible (Pull Off)', expression: 'to pull off', level: 'advanced' }
+    ]
+  }
+};
+
+const LEVEL_LABELS = {
+  en: { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced' },
+  es: { beginner: 'Principiante', intermediate: 'Intermedio', advanced: 'Avanzado' }
+};
+
+function exprCard(c, i, scripts, sayLabel, lang, numClass) {
+  return `
+    <div class="card">
+      <div class="card-top">
+        <span class="card-num ${numClass}">${String(i+1).padStart(2,'0')}</span>
+        <span class="card-emoji">${c.emoji}</span>
+        <div class="card-right">
+          <span class="level-${c.level}">${LEVEL_LABELS[lang][c.level]}</span>
+          <span class="card-title card-title-tight">${c.title}</span>
+        </div>
+      </div>
+      <div class="card-expression">Expression: <em>${c.expression}</em></div>
+      <div class="script-box ${numClass === 'card-num-green' ? 'sb-green' : ''}">
+        <div class="script-label ${numClass === 'card-num-green' ? 'sl-green' : ''}">${sayLabel}</div>
+        <div class="script-text">"${scripts[i]}"</div>
+      </div>
+    </div>`;
+}
+
+function render(lang) {
+  const d = DATA[lang];
+  document.getElementById('eyebrow').textContent = d.eyebrow;
+  document.getElementById('hero-title').textContent = d.title;
+  document.getElementById('hero-body').innerHTML = d.body;
+  document.getElementById('keys-text').innerHTML = d.keysText;
+  document.getElementById('rem-label').textContent = d.remLabel;
+  document.getElementById('s1-title').textContent = d.s1Title;
+  document.getElementById('s1-sub').textContent = d.s1Sub;
+  document.getElementById('s2-title').textContent = d.s2Title;
+  document.getElementById('s2-sub').textContent = d.s2Sub;
+  document.getElementById('s3-title').textContent = d.s3Title;
+  document.getElementById('s3-sub').textContent = d.s3Sub;
+  document.getElementById('closing').textContent = d.closing;
+  document.getElementById('footer-note').textContent = d.footerNote;
+
+  document.getElementById('rem-list').innerHTML = d.reminders.map(r =>
+    `<div class="tip"><span class="dot">◆</span><span>${r}</span></div>`
+  ).join('');
+
+  document.getElementById('keys-list').innerHTML = d.keys.map((c, i) => `
+    <div class="card">
+      <div class="card-top">
+        <span class="card-num card-num-gold">${String(i+1).padStart(2,'0')}</span>
+        <span class="card-emoji">${c.emoji}</span>
+        <span class="card-title">${c.title}</span>
+      </div>
+      <div class="script-box sb-gold">
+        <div class="script-label sl-gold">${d.sayLabel}</div>
+        <div class="script-text st-gold">"${KEYS_SCRIPTS[i]}"</div>
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('everyday-list').innerHTML = d.everyday.map((c, i) =>
+    exprCard(c, i, EVERYDAY_SCRIPTS, d.sayLabel, lang, 'card-num-green')).join('');
+
+  document.getElementById('business-list').innerHTML = d.business.map((c, i) =>
+    exprCard(c, i, BUSINESS_SCRIPTS, d.sayLabel, lang, '')).join('');
+
+  document.getElementById('btn-en').className = lang === 'en' ? 'btn-active' : 'btn-idle';
+  document.getElementById('btn-es').className = lang === 'es' ? 'btn-active' : 'btn-idle';
+}
+
+function setLang(lang) { render(lang); }
+render('en');
+</script>
+</body>
+</html>
