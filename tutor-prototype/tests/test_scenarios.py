@@ -109,6 +109,35 @@ class PickScenarioTest(unittest.TestCase):
         first = all_scenarios()[0][1]
         self.assertEqual(tutor.pick_scenario(first["id"])["id"], first["id"])
 
+    def test_scenario_carries_its_own_pack_label(self) -> None:
+        # Regression: the prompt used to hardcode "Abadía Retuerta pack" no
+        # matter which of the eleven packs the student actually picked, since
+        # pick_scenario flattened every pack's scenarios into one list and
+        # dropped which pack each one came from. Every scenario must now
+        # report the real pack it belongs to.
+        packs = load_packs()
+        for pack in packs:
+            for s in pack["scenarios"]:
+                with self.subTest(pack=pack["id"], scenario=s["id"]):
+                    picked = tutor.pick_scenario(s["id"])
+                    self.assertEqual(picked["pack_id"], pack["id"])
+                    self.assertEqual(picked["pack_label"], pack["label"])
+
+    def test_system_prompt_names_the_actual_pack_not_abadia_retuerta(self) -> None:
+        student = {
+            "name": "Alex", "cefr_level": "B1", "grammar_covered": [],
+            "vocab_acquired_log": [], "recurring_error_patterns": [],
+            "session_history": [],
+        }
+        for pack in load_packs():
+            if pack["id"] == "abadia_retuerta":
+                continue  # the one pack where this string is correct
+            scenario = tutor.pick_scenario(None, pack["id"])
+            with self.subTest(pack=pack["id"]):
+                ctx = tutor.dynamic_context("B1", "business", scenario, student)
+                self.assertIn(f"{pack['label']} pack", ctx)
+                self.assertNotIn("Abadía Retuerta", ctx)
+
     def test_picks_randomly_from_a_named_pack(self) -> None:
         pack = load_packs()[-1]
         ids_in_pack = {s["id"] for s in pack["scenarios"]}

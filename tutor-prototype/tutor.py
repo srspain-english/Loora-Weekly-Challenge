@@ -279,8 +279,13 @@ def dynamic_context(level: str, mode: str, scenario: dict | None, student: dict)
             f"Vocabulary log to draw part 3 from: {json.dumps(vocab_review)}",
         )
     else:
+        # pack_label names the actual sector this scenario came from (Sales &
+        # Client Relations, Logistics & Supply Chain, ...), not a fixed
+        # string — this used to say "Abadía Retuerta pack" unconditionally,
+        # regardless of which of the eleven packs the student had picked.
+        pack_label = scenario.get("pack_label", "Business English")
         parts.append(
-            "\nMODE: Business English — Abadía Retuerta pack.\n"
+            f"\nMODE: Business English — {pack_label} pack.\n"
             f"Target expression: \"{scenario['expression']}\" ({scenario['title']}).\n"
             f"Your role: act as {scenario['role']}.\n"
             f"Question domain: {scenario['domain']}.\n"
@@ -490,7 +495,17 @@ def pick_scenario(scenario_id: str | None, pack: str | None = None) -> dict:
             pack_ids = ", ".join(p["id"] for p in packs)
             raise UnknownScenario(f"Unknown pack '{pack}'. Available: {pack_ids}")
         packs = matching_packs
-    library = [s for p in packs for s in p["scenarios"]]
+
+    # Flattening for lookup loses which pack a scenario came from, but the
+    # system prompt needs that name — not to hardcode "Abadía Retuerta" the
+    # way it used to regardless of which of the eleven packs was actually
+    # picked. Stamp it onto a copy rather than the loaded dict, so repeated
+    # calls in the same process (the CLI's whole run, a test) don't leak
+    # pack_id/pack_label onto scenarios.json's own in-memory data.
+    library = [
+        dict(s, pack_id=p["id"], pack_label=p["label"])
+        for p in packs for s in p["scenarios"]
+    ]
     if scenario_id:
         match = next((s for s in library if s["id"] == scenario_id), None)
         if not match:
