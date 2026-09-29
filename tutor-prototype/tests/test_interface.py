@@ -60,6 +60,19 @@ class PageTest(ServerTestCase, unittest.TestCase):
         self.assertIn("Listening…", self.html)
         self.assertIn("#mic-btn.recording", self.html)
 
+    def test_mic_does_not_stop_on_a_thinking_pause(self) -> None:
+        # Without continuous=true the speech engine ends the recording the
+        # instant it detects silence - which mobile engines trigger on far
+        # sooner than desktop, cutting a student off mid-sentence every time
+        # they pause to find an English word. Regression for that report.
+        self.assertIn("recognition.continuous = true", self.html)
+        # continuous delivers speech as successive chunks rather than one
+        # final result, so onresult must accumulate them - reading only
+        # e.results[0] (the old code) silently drops every chunk after the
+        # first pause instead of merging them into what the student said.
+        self.assertIn("transcriptBuffer", self.html)
+        self.assertIn("e.resultIndex", self.html)
+
     def test_report_generation_has_a_visible_state(self) -> None:
         self.assertIn("Writing your report", self.html)
 

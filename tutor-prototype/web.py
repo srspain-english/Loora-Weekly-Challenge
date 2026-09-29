@@ -441,11 +441,34 @@ function setupVoiceInput() {
   recognition.lang = 'en-US';
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
+  // Without this the engine stops listening the instant it detects a pause
+  // in speech - not a fixed timeout, but silence-detection that mobile
+  // engines (Android Chrome especially) trigger on far sooner than desktop
+  // does. A student mid-sentence in a language they're still finding their
+  // words in pauses to think constantly, and each of those pauses was being
+  // read as "done talking", cutting them off with no warning. continuous
+  // keeps the mic open across pauses until stop() is called explicitly -
+  // holding the button, or the second tap.
+  recognition.continuous = true;
+
+  // continuous mode delivers speech in successive finalized chunks rather
+  // than one result at the end, so they need accumulating - the previous
+  // code only ever read e.results[0], which under continuous silently
+  // dropped every chunk after the first pause instead of merging them.
+  let transcriptBuffer = '';
   recognition.onresult = (e) => {
-    $('msg-input').value = e.results[0][0].transcript;
+    let finalText = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
+    }
+    if (finalText.trim()) {
+      transcriptBuffer += (transcriptBuffer ? ' ' : '') + finalText.trim();
+      $('msg-input').value = transcriptBuffer;
+    }
   };
   const stopIndicator = () => {
     recognitionActive = false;
+    transcriptBuffer = '';
     $('mic-btn').classList.remove('recording');
     $('mic-btn').setAttribute('aria-label', 'Hold or tap to talk');
     if (lastSavedAt) showSaved(); else setStatus('chat-status', '');
