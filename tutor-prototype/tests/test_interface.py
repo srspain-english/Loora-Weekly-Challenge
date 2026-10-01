@@ -89,6 +89,19 @@ class PageTest(ServerTestCase, unittest.TestCase):
         self.assertIn("hadFatalError", self.html)
         self.assertIn("'no-speech'", self.html)
 
+    def test_mic_gives_up_and_says_so_instead_of_hanging_forever(self) -> None:
+        # Some browsers (Safari on both iOS and the Mac) claim to support
+        # this API, turn the mic red on start(), and then never fire
+        # onresult, onerror, or onend again - a stuck button with zero
+        # feedback, impossible to tell apart from "still listening" by
+        # feature-detecting the API, since the browser claims to support it.
+        # A watchdog times that out and tells the student plainly, rather
+        # than leaving the only sign of life a mic that stays red forever.
+        self.assertIn("WATCHDOG_MS", self.html)
+        self.assertIn("armWatchdog", self.html)
+        self.assertIn("isn't responding in this browser", self.html)
+        self.assertIn("keyboard dictation", self.html)
+
     def test_report_generation_has_a_visible_state(self) -> None:
         self.assertIn("Writing your report", self.html)
 
