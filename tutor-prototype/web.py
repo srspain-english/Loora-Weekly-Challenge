@@ -441,36 +441,35 @@ function setupVoiceInput() {
   recognition.lang = 'en-US';
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
-  // Without this the engine stops listening the instant it detects a pause
-  // in speech - not a fixed timeout, but silence-detection that mobile
-  // engines (Android Chrome especially) trigger on far sooner than desktop
-  // does. A student mid-sentence in a language they're still finding their
-  // words in pauses to think constantly, and each of those pauses was being
-  // read as "done talking", cutting them off with no warning. continuous
-  // keeps the mic open across pauses until stop() is called explicitly -
-  // holding the button, or the second tap.
+  // The engine stops listening the instant it detects a pause in speech -
+  // not a fixed timeout, but silence-detection that mobile engines (Android
+  // Chrome especially) trigger on far sooner than desktop does. A student
+  // mid-sentence in a language they're still finding their words in pauses
+  // to think constantly, and each of those pauses was being read as "done
+  // talking", cutting them off with no warning.
   //
-  // iOS Safari's continuous mode is its own, separate bug: WebKit starts
-  // listening but onresult can take seconds or never fire at all for the
-  // rest of the session (bugs.webkit.org/show_bug.cgi?id=225298; reported
-  // the same way by multiple people on Apple's own developer forums). That
-  // reads to a student as "I tapped the mic, it turned red, and nothing
-  // happened" - indistinguishable from broken. continuous works as intended
-  // everywhere else, which is what it was added for, so keep it off only on
-  // iOS and get the same no-cutoff behavior there by chaining short sessions
-  // instead (see onend/onerror below).
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  recognition.continuous = !isIOS;
-
-  // continuous mode delivers speech in successive finalized chunks rather
-  // than one result at the end, so they need accumulating - the previous
-  // code only ever read e.results[0], which under continuous silently
-  // dropped every chunk after the first pause instead of merging them.
-  // Chained iOS sessions land in the same buffer for the same reason: each
-  // restart is a fresh result set that needs adding to what came before.
+  // The browser's own fix for this is the recognition object's continuous
+  // flag, which is supposed to keep one session open across pauses when
+  // turned on - but WebKit's
+  // implementation of it is unreliable to the point of unusable: onresult
+  // can take seconds or never fire at all for the rest of the session once
+  // continuous is on (bugs.webkit.org/show_bug.cgi?id=225298, and reported
+  // the same way repeatedly on Apple's own developer forums, on both iOS
+  // Safari and desktop Safari on the Mac - every browser on iOS hits this
+  // identically too, since Apple requires them all to run on WebKit). To a
+  // student that reads as "I tapped the mic, it turned red, and nothing
+  // happened" - indistinguishable from broken, which is worse than the
+  // cutoff it was meant to fix.
+  //
+  // So continuous is never used here. Instead, every pause ends a session
+  // the normal (reliable) way and onend immediately opens a fresh one, for
+  // as long as the student hasn't tapped stop - chaining short sessions
+  // back to back reads to the student as one uninterrupted recording, same
+  // as continuous was meant to, without depending on continuous actually
+  // working anywhere.
   let transcriptBuffer = '';
   let stopRequested = false;
+  let hadFatalError = false;
   recognition.onresult = (e) => {
     let finalText = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -488,19 +487,20 @@ function setupVoiceInput() {
     $('mic-btn').setAttribute('aria-label', 'Hold or tap to talk');
     if (lastSavedAt) showSaved(); else setStatus('chat-status', '');
   };
-  // On iOS, a pause ends the session (no-speech error, then end) exactly
-  // like non-continuous mode everywhere else - that's expected, not a
-  // failure. Restarting immediately, as long as the student hasn't tapped
-  // stop, keeps listening across the pause without touching the buffer.
-  const rechainOrStop = () => {
-    if (isIOS && recognitionActive && !stopRequested) {
+  // 'no-speech' is just the pause that ends every non-continuous session -
+  // expected, not a failure, and onend (which always follows) is what
+  // restarts it. Anything else (mic permission pulled, no microphone,
+  // network) is a real failure and must not loop retrying forever.
+  recognition.onerror = (e) => {
+    if (e.error !== 'no-speech' && e.error !== 'aborted') hadFatalError = true;
+  };
+  recognition.onend = () => {
+    if (recognitionActive && !stopRequested && !hadFatalError) {
       try { recognition.start(); } catch (err) { /* already starting, ignore */ }
       return;
     }
     stopIndicator();
   };
-  recognition.onerror = rechainOrStop;
-  recognition.onend = rechainOrStop;
 
   const micBtn = $('mic-btn');
   micBtn.style.display = 'flex';
@@ -516,6 +516,7 @@ function setupVoiceInput() {
     if (recognitionActive) return;
     recognitionActive = true;
     stopRequested = false;
+    hadFatalError = false;
     micBtn.classList.add('recording');
     micBtn.setAttribute('aria-label', 'Recording — tap to stop');
     setStatus('chat-status', 'Listening…', 'waking');

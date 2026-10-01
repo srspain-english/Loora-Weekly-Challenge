@@ -61,29 +61,33 @@ class PageTest(ServerTestCase, unittest.TestCase):
         self.assertIn("#mic-btn.recording", self.html)
 
     def test_mic_does_not_stop_on_a_thinking_pause(self) -> None:
-        # Without continuous=true the speech engine ends the recording the
-        # instant it detects silence - which mobile engines trigger on far
-        # sooner than desktop, cutting a student off mid-sentence every time
-        # they pause to find an English word. Regression for that report.
-        self.assertIn("recognition.continuous = !isIOS", self.html)
-        # continuous delivers speech as successive chunks rather than one
-        # final result, so onresult must accumulate them - reading only
-        # e.results[0] (the old code) silently drops every chunk after the
-        # first pause instead of merging them into what the student said.
+        # The speech engine ends a recording the instant it detects silence -
+        # which mobile engines trigger on far sooner than desktop, cutting a
+        # student off mid-sentence every time they pause to find an English
+        # word. recognition.continuous=true is the browser's own fix for
+        # this, but WebKit's implementation of it is broken badly enough
+        # (onresult can hang forever once it's on - see the next test) that
+        # it must never be turned on here; pauses are instead handled by
+        # restarting a fresh session on every onend, for as long as the
+        # student hasn't tapped stop - chaining sessions reads as one
+        # uninterrupted recording without needing continuous to work at all.
+        self.assertNotIn("recognition.continuous =", self.html)
+        self.assertIn("stopRequested", self.html)
+        self.assertIn("recognition.onend = () =>", self.html)
+        # chained sessions deliver speech as successive separate results
+        # rather than one final result, so onresult must accumulate them -
+        # reading only e.results[0] (the old code) would silently drop every
+        # chunk after the first pause instead of merging them into what the
+        # student said.
         self.assertIn("transcriptBuffer", self.html)
         self.assertIn("e.resultIndex", self.html)
 
-    def test_mic_does_not_hang_silently_on_ios(self) -> None:
-        # continuous=true is its own separate bug on iOS Safari: the mic
-        # starts (the button goes red) but onresult can take seconds or
-        # never fire at all for the rest of the session - indistinguishable
-        # from broken to a student. Regression for that report: continuous
-        # must be disabled on iOS specifically, with pauses handled instead
-        # by restarting a fresh (non-continuous, so actually working)
-        # session for as long as the student hasn't tapped stop.
-        self.assertIn("isIOS", self.html)
-        self.assertIn("stopRequested", self.html)
-        self.assertIn("rechainOrStop", self.html)
+    def test_mic_does_not_hang_silently_on_a_real_failure(self) -> None:
+        # A pause ending a session is expected and must restart it (above),
+        # but a real failure - mic permission pulled, no microphone, no
+        # network - must not loop retrying forever as if it were a pause.
+        self.assertIn("hadFatalError", self.html)
+        self.assertIn("'no-speech'", self.html)
 
     def test_report_generation_has_a_visible_state(self) -> None:
         self.assertIn("Writing your report", self.html)
