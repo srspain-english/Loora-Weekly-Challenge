@@ -104,7 +104,8 @@ All have working defaults; set them only to tighten something.
 | `JUNO_MAX_MESSAGE_CHARS` | 4000 | Longest single message accepted. |
 | `JUNO_DAILY_COST_CEILING_USD` | 5.00 | **Emergency brake.** Once the whole deployment has spent this in a day, no new classes start for anyone. |
 | `JUNO_SESSION_COST_WARN_USD` | 1.00 | Logs a warning past this much in one session. |
-| `JUNO_DB_PATH` | `data/juno.db` | Where server state lives. |
+| `JUNO_DATA_DIR` | `data` | Folder for everything Juno keeps: the database, each student's memory (`students/`), and feedback. Set it to a persistent disk's mount path when deployed. |
+| `JUNO_DB_PATH` | `<JUNO_DATA_DIR>/juno.db` | Overrides just the database location. Normally leave unset. |
 
 ### Migration (automatic, and non-destructive)
 
@@ -122,12 +123,15 @@ Server state — identities, limits, saved classes, spend — lives in SQLite at
 `data/juno.db`, so it survives the process being restarted, which is what
 normally happens when the free tier idles out and wakes back up.
 
-It does **not** survive a redeploy: Render's free tier has no persistent
-disk, so a new deploy starts from an empty database. In practice that means
-daily limits reset and unfinished classes become unrecoverable on the day you
-deploy. For a pilot that is a reasonable trade; if this outgrows it, the fix
-is a Render disk or a managed Postgres, and `store.py` is the only file that
-would change.
+Without a persistent disk it does **not** survive a redeploy: every deploy
+starts from an empty `data` folder, which wipes saved classes, limits, spend,
+student memory and feedback. Render's free tier can't have a disk.
+
+To keep it, put the service on a paid instance type, add a disk under the
+service's **Disks** page (mount path `/opt/render/project/src/storage`,
+1 GB is plenty), and set `JUNO_DATA_DIR=/opt/render/project/src/storage`.
+A service with a disk can't run more than one instance, and deploys have a
+few seconds of downtime while the disk moves to the new instance.
 
 ## What a call costs
 

@@ -31,7 +31,10 @@ import anthropic
 MODEL = "claude-opus-5"
 BASE_DIR = Path(__file__).resolve().parent
 SCENARIOS_PATH = BASE_DIR / "scenarios.json"
-STUDENTS_DIR = BASE_DIR / "data" / "students"
+# Everything a student builds up over time lives here. Point it at a
+# persistent disk when deployed, or a redeploy wipes it.
+DATA_DIR = Path(os.environ.get("JUNO_DATA_DIR", BASE_DIR / "data"))
+STUDENTS_DIR = DATA_DIR / "students"
 
 # ---------------------------------------------------------------------------
 # Playbook rules (§02-§03) — condensed for the system prompt.

@@ -49,7 +49,7 @@ HOST = "0.0.0.0" if RUNNING_DEPLOYED else "127.0.0.1"
 PORT = int(os.environ.get("PORT", 8765))
 ACCESS_PASSPHRASE = os.environ.get("JUNO_ACCESS_PASSPHRASE", "")
 MAX_FEEDBACK_LENGTH = 2000
-FEEDBACK_PATH = tutor.BASE_DIR / "data" / "feedback.jsonl"
+FEEDBACK_PATH = tutor.DATA_DIR / "feedback.jsonl"
 # A year: the point of this cookie is that a student stays the same person
 # between classes without having to be given a code first.
 STUDENT_COOKIE_MAX_AGE = 365 * 24 * 3600

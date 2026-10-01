@@ -35,7 +35,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = Path(os.environ.get("JUNO_DB_PATH", BASE_DIR / "data" / "juno.db"))
+DATA_DIR = Path(os.environ.get("JUNO_DATA_DIR", BASE_DIR / "data"))
+DB_PATH = Path(os.environ.get("JUNO_DB_PATH", DATA_DIR / "juno.db"))
 
 # --- Limits ------------------------------------------------------------
 # All overridable from the environment so they can be tightened on a live
