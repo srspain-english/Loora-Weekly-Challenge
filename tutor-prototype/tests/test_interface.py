@@ -65,13 +65,25 @@ class PageTest(ServerTestCase, unittest.TestCase):
         # instant it detects silence - which mobile engines trigger on far
         # sooner than desktop, cutting a student off mid-sentence every time
         # they pause to find an English word. Regression for that report.
-        self.assertIn("recognition.continuous = true", self.html)
+        self.assertIn("recognition.continuous = !isIOS", self.html)
         # continuous delivers speech as successive chunks rather than one
         # final result, so onresult must accumulate them - reading only
         # e.results[0] (the old code) silently drops every chunk after the
         # first pause instead of merging them into what the student said.
         self.assertIn("transcriptBuffer", self.html)
         self.assertIn("e.resultIndex", self.html)
+
+    def test_mic_does_not_hang_silently_on_ios(self) -> None:
+        # continuous=true is its own separate bug on iOS Safari: the mic
+        # starts (the button goes red) but onresult can take seconds or
+        # never fire at all for the rest of the session - indistinguishable
+        # from broken to a student. Regression for that report: continuous
+        # must be disabled on iOS specifically, with pauses handled instead
+        # by restarting a fresh (non-continuous, so actually working)
+        # session for as long as the student hasn't tapped stop.
+        self.assertIn("isIOS", self.html)
+        self.assertIn("stopRequested", self.html)
+        self.assertIn("rechainOrStop", self.html)
 
     def test_report_generation_has_a_visible_state(self) -> None:
         self.assertIn("Writing your report", self.html)
