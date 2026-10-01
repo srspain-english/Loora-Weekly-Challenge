@@ -52,12 +52,15 @@ class PageTest(ServerTestCase, unittest.TestCase):
         self.assertIn('id="resume-report-btn"', self.html)
         self.assertIn('id="resume-discard-btn"', self.html)
 
-    def test_mic_records_by_tap_as_well_as_hold(self) -> None:
-        self.assertIn("TAP_MS", self.html)
-        self.assertIn("tap to stop", self.html)
+    def test_mic_is_hold_to_talk(self) -> None:
+        # Releasing the button is what makes the browser hand over the text.
+        # Tap-to-record left that decision to the browser, and on Safari the
+        # mic then stayed red with nothing coming back.
+        self.assertIn("micBtn.addEventListener('touchend', stop)", self.html)
+        self.assertIn("micBtn.addEventListener('mouseup', stop)", self.html)
+        self.assertNotIn("TAP_MS", self.html)
 
     def test_mic_shows_that_it_is_recording(self) -> None:
-        self.assertIn("Listening…", self.html)
         self.assertIn("#mic-btn.recording", self.html)
 
     def test_report_generation_has_a_visible_state(self) -> None:

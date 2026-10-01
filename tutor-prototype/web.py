@@ -444,61 +444,28 @@ function setupVoiceInput() {
   recognition.onresult = (e) => {
     $('msg-input').value = e.results[0][0].transcript;
   };
-  const stopIndicator = () => {
-    recognitionActive = false;
-    $('mic-btn').classList.remove('recording');
-    $('mic-btn').setAttribute('aria-label', 'Hold or tap to talk');
-    if (lastSavedAt) showSaved(); else setStatus('chat-status', '');
-  };
-  recognition.onerror = stopIndicator;
-  recognition.onend = stopIndicator;
+  recognition.onerror = () => { recognitionActive = false; $('mic-btn').classList.remove('recording'); };
+  recognition.onend = () => { recognitionActive = false; $('mic-btn').classList.remove('recording'); };
 
   const micBtn = $('mic-btn');
   micBtn.style.display = 'flex';
-
-  // Two ways to record, because hold-to-talk alone is genuinely awkward for a
-  // long sentence in a language you are still finding your words in: hold the
-  // button, or tap it once to start and once to stop. A short press that
-  // released almost immediately is read as a tap and leaves recording on.
-  let pressedAt = 0;
-  const TAP_MS = 350;
-
-  const begin = () => {
+  const start = (e) => {
+    e.preventDefault();
     if (recognitionActive) return;
     recognitionActive = true;
     micBtn.classList.add('recording');
-    micBtn.setAttribute('aria-label', 'Recording — tap to stop');
-    setStatus('chat-status', 'Listening…', 'waking');
     try { recognition.start(); } catch (err) { /* already started, ignore */ }
   };
-  const finish = () => {
+  const stop = (e) => {
+    e.preventDefault();
     if (!recognitionActive) return;
     recognition.stop();
   };
-
-  const onDown = (e) => {
-    e.preventDefault();
-    if (recognitionActive) { finish(); return; }  // tap again to stop
-    pressedAt = Date.now();
-    begin();
-  };
-  const onUp = (e) => {
-    e.preventDefault();
-    // Released quickly: treat it as a tap and keep listening.
-    if (Date.now() - pressedAt < TAP_MS) return;
-    finish();
-  };
-
-  micBtn.addEventListener('mousedown', onDown);
-  micBtn.addEventListener('touchstart', onDown);
-  micBtn.addEventListener('mouseup', onUp);
-  micBtn.addEventListener('touchend', onUp);
-  micBtn.addEventListener('keydown', (e) => {
-    if (e.key === ' ' || e.key === 'Enter') {
-      e.preventDefault();
-      recognitionActive ? finish() : begin();
-    }
-  });
+  micBtn.addEventListener('mousedown', start);
+  micBtn.addEventListener('touchstart', start);
+  micBtn.addEventListener('mouseup', stop);
+  micBtn.addEventListener('mouseleave', stop);
+  micBtn.addEventListener('touchend', stop);
 }
 
 // Try an empty passphrase first - if no access code is configured server-side,
