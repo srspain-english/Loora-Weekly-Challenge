@@ -60,48 +60,6 @@ class PageTest(ServerTestCase, unittest.TestCase):
         self.assertIn("Listening…", self.html)
         self.assertIn("#mic-btn.recording", self.html)
 
-    def test_mic_does_not_stop_on_a_thinking_pause(self) -> None:
-        # The speech engine ends a recording the instant it detects silence -
-        # which mobile engines trigger on far sooner than desktop, cutting a
-        # student off mid-sentence every time they pause to find an English
-        # word. recognition.continuous=true is the browser's own fix for
-        # this, but WebKit's implementation of it is broken badly enough
-        # (onresult can hang forever once it's on - see the next test) that
-        # it must never be turned on here; pauses are instead handled by
-        # restarting a fresh session on every onend, for as long as the
-        # student hasn't tapped stop - chaining sessions reads as one
-        # uninterrupted recording without needing continuous to work at all.
-        self.assertNotIn("recognition.continuous =", self.html)
-        self.assertIn("stopRequested", self.html)
-        self.assertIn("recognition.onend = () =>", self.html)
-        # chained sessions deliver speech as successive separate results
-        # rather than one final result, so onresult must accumulate them -
-        # reading only e.results[0] (the old code) would silently drop every
-        # chunk after the first pause instead of merging them into what the
-        # student said.
-        self.assertIn("transcriptBuffer", self.html)
-        self.assertIn("e.resultIndex", self.html)
-
-    def test_mic_does_not_hang_silently_on_a_real_failure(self) -> None:
-        # A pause ending a session is expected and must restart it (above),
-        # but a real failure - mic permission pulled, no microphone, no
-        # network - must not loop retrying forever as if it were a pause.
-        self.assertIn("hadFatalError", self.html)
-        self.assertIn("'no-speech'", self.html)
-
-    def test_mic_gives_up_and_says_so_instead_of_hanging_forever(self) -> None:
-        # Some browsers (Safari on both iOS and the Mac) claim to support
-        # this API, turn the mic red on start(), and then never fire
-        # onresult, onerror, or onend again - a stuck button with zero
-        # feedback, impossible to tell apart from "still listening" by
-        # feature-detecting the API, since the browser claims to support it.
-        # A watchdog times that out and tells the student plainly, rather
-        # than leaving the only sign of life a mic that stays red forever.
-        self.assertIn("WATCHDOG_MS", self.html)
-        self.assertIn("armWatchdog", self.html)
-        self.assertIn("isn't responding in this browser", self.html)
-        self.assertIn("keyboard dictation", self.html)
-
     def test_report_generation_has_a_visible_state(self) -> None:
         self.assertIn("Writing your report", self.html)
 

@@ -441,99 +441,17 @@ function setupVoiceInput() {
   recognition.lang = 'en-US';
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
-  // The engine stops listening the instant it detects a pause in speech -
-  // not a fixed timeout, but silence-detection that mobile engines (Android
-  // Chrome especially) trigger on far sooner than desktop does. A student
-  // mid-sentence in a language they're still finding their words in pauses
-  // to think constantly, and each of those pauses was being read as "done
-  // talking", cutting them off with no warning.
-  //
-  // The browser's own fix for this is the recognition object's continuous
-  // flag, which is supposed to keep one session open across pauses when
-  // turned on - but WebKit's
-  // implementation of it is unreliable to the point of unusable: onresult
-  // can take seconds or never fire at all for the rest of the session once
-  // continuous is on (bugs.webkit.org/show_bug.cgi?id=225298, and reported
-  // the same way repeatedly on Apple's own developer forums, on both iOS
-  // Safari and desktop Safari on the Mac - every browser on iOS hits this
-  // identically too, since Apple requires them all to run on WebKit). To a
-  // student that reads as "I tapped the mic, it turned red, and nothing
-  // happened" - indistinguishable from broken, which is worse than the
-  // cutoff it was meant to fix.
-  //
-  // So continuous is never used here. Instead, every pause ends a session
-  // the normal (reliable) way and onend immediately opens a fresh one, for
-  // as long as the student hasn't tapped stop - chaining short sessions
-  // back to back reads to the student as one uninterrupted recording, same
-  // as continuous was meant to, without depending on continuous actually
-  // working anywhere.
-  let transcriptBuffer = '';
-  let stopRequested = false;
-  let hadFatalError = false;
   recognition.onresult = (e) => {
-    clearWatchdog();
-    let finalText = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
-    }
-    if (finalText.trim()) {
-      transcriptBuffer += (transcriptBuffer ? ' ' : '') + finalText.trim();
-      $('msg-input').value = transcriptBuffer;
-    }
+    $('msg-input').value = e.results[0][0].transcript;
   };
   const stopIndicator = () => {
     recognitionActive = false;
-    transcriptBuffer = '';
     $('mic-btn').classList.remove('recording');
     $('mic-btn').setAttribute('aria-label', 'Hold or tap to talk');
     if (lastSavedAt) showSaved(); else setStatus('chat-status', '');
   };
-  // Some browsers (Safari especially, on both iOS and the Mac - see
-  // bugs.webkit.org/show_bug.cgi?id=225298 and multiple matching reports on
-  // Apple's own developer forums) advertise support for this API, turn the
-  // mic icon red on start() as if listening, and then never fire onresult,
-  // onerror, or onend again for the rest of the session - the student sees
-  // a stuck red button and nothing else, forever, with zero feedback. That
-  // can't be told apart from "still listening" by feature-detecting the API
-  // up front, since the browser claims to support it; it only shows up once
-  // nothing happens. A watchdog catches it instead: every real engine, even
-  // mid-pause, fires at least one of those three events well within this
-  // window (a no-speech error is the normal end of an unspoken pause), so
-  // nothing firing for that long means the engine is stuck, not thinking.
-  const WATCHDOG_MS = 8000;
-  let watchdogTimer = null;
-  const clearWatchdog = () => {
-    if (watchdogTimer) { clearTimeout(watchdogTimer); watchdogTimer = null; }
-  };
-  const armWatchdog = () => {
-    clearWatchdog();
-    watchdogTimer = setTimeout(() => {
-      watchdogTimer = null;
-      stopRequested = true;
-      try { recognition.abort(); } catch (err) { /* already stopped, ignore */ }
-      stopIndicator();
-      setStatus('chat-status',
-        "Voice input isn't responding in this browser — type your answer, " +
-        "or use your device's own keyboard dictation (the mic icon on your keyboard).",
-        'offline');
-    }, WATCHDOG_MS);
-  };
-  // 'no-speech' is just the pause that ends every non-continuous session -
-  // expected, not a failure, and onend (which always follows) is what
-  // restarts it. Anything else (mic permission pulled, no microphone,
-  // network) is a real failure and must not loop retrying forever.
-  recognition.onerror = (e) => {
-    clearWatchdog();
-    if (e.error !== 'no-speech' && e.error !== 'aborted') hadFatalError = true;
-  };
-  recognition.onend = () => {
-    clearWatchdog();
-    if (recognitionActive && !stopRequested && !hadFatalError) {
-      try { recognition.start(); armWatchdog(); } catch (err) { /* already starting, ignore */ }
-      return;
-    }
-    stopIndicator();
-  };
+  recognition.onerror = stopIndicator;
+  recognition.onend = stopIndicator;
 
   const micBtn = $('mic-btn');
   micBtn.style.display = 'flex';
@@ -548,17 +466,13 @@ function setupVoiceInput() {
   const begin = () => {
     if (recognitionActive) return;
     recognitionActive = true;
-    stopRequested = false;
-    hadFatalError = false;
     micBtn.classList.add('recording');
     micBtn.setAttribute('aria-label', 'Recording — tap to stop');
     setStatus('chat-status', 'Listening…', 'waking');
-    try { recognition.start(); armWatchdog(); } catch (err) { /* already started, ignore */ }
+    try { recognition.start(); } catch (err) { /* already started, ignore */ }
   };
   const finish = () => {
     if (!recognitionActive) return;
-    stopRequested = true;
-    clearWatchdog();
     recognition.stop();
   };
 
