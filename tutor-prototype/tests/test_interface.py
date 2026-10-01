@@ -76,6 +76,17 @@ class PageTest(ServerTestCase, unittest.TestCase):
     def test_report_generation_has_a_visible_state(self) -> None:
         self.assertIn("Writing your report", self.html)
 
+    def test_the_very_first_auth_check_shows_waking_up_too(self) -> None:
+        # Reported as "Juno doesn't load" on a cold Render instance: the
+        # silent empty-passphrase probe that fires on every page load, before
+        # the student touches anything, was the one call in the file that
+        # never passed onWaking - so a slow cold start left the static
+        # "Loading…" text frozen on screen with zero feedback for up to a
+        # minute, which is indistinguishable from broken. Every other call
+        # already had this; this one needs it even more, since it's the
+        # first thing that runs.
+        self.assertIn("onWaking: () => { $('lede').textContent", self.html)
+
     def test_actions_cannot_be_fired_twice(self) -> None:
         self.assertIn("if (sending) return;", self.html)
         self.assertIn("if ($('start-btn').disabled) return;", self.html)

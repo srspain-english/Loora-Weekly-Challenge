@@ -526,7 +526,20 @@ function setupVoiceInput() {
 
 // Try an empty passphrase first - if no access code is configured server-side,
 // this succeeds immediately and the auth screen never has to be shown.
-api('/api/auth', { passphrase: '' }).then(() => {
+//
+// This is the very first network call the page makes, before the student has
+// touched anything - and on Render's free tier, a service that's been idle
+// goes to sleep, so this exact call is usually the one that wakes it back up.
+// Every other call in this file passes onWaking to show that; this one
+// previously did not, so a cold start looked like nothing - the static
+// "Loading…" text just sat there for up to a minute with no sign anything
+// was happening, which is indistinguishable from broken. It isn't scoped to
+// one screen (onWaking usually targets setup-status/chat-status) because at
+// this point the auth screen is still showing, not the setup screen - lede
+// sits outside every screen div, so it's visible no matter which one is up.
+api('/api/auth', { passphrase: '' }, {
+  onWaking: () => { $('lede').textContent = 'Juno is waking up — this can take up to a minute after a quiet spell…'; },
+}).then(() => {
   $('lede').textContent = 'A live practice call, corrected as you go.';
   afterAuth();
 }).catch(() => {
