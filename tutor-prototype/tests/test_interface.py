@@ -52,13 +52,20 @@ class PageTest(ServerTestCase, unittest.TestCase):
         self.assertIn('id="resume-report-btn"', self.html)
         self.assertIn('id="resume-discard-btn"', self.html)
 
-    def test_mic_is_hold_to_talk(self) -> None:
-        # Releasing the button is what makes the browser hand over the text.
-        # Tap-to-record left that decision to the browser, and on Safari the
-        # mic then stayed red with nothing coming back.
-        self.assertIn("micBtn.addEventListener('touchend', stop)", self.html)
-        self.assertIn("micBtn.addEventListener('mouseup', stop)", self.html)
-        self.assertNotIn("TAP_MS", self.html)
+    def test_mic_starts_on_a_real_tap(self) -> None:
+        # The HTML standard only counts a finished tap (touchend) or a click
+        # as the user really acting; touchstart isn't one. Starting the mic
+        # from touchstart was the suspected cause of the silent red button
+        # on iPhone.
+        self.assertIn("micBtn.addEventListener('click'", self.html)
+        self.assertNotIn("addEventListener('touchstart'", self.html)
+
+    def test_mic_says_why_it_failed(self) -> None:
+        # Shows the words as they are spoken, and the reason when it fails,
+        # instead of failing silently.
+        self.assertIn("recognition.interimResults = true", self.html)
+        self.assertIn("recognition.onerror = (e) => { voiceError = e.error; }", self.html)
+        self.assertIn("The microphone is blocked for this site", self.html)
 
     def test_mic_shows_that_it_is_recording(self) -> None:
         self.assertIn("#mic-btn.recording", self.html)

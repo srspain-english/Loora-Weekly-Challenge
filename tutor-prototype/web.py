@@ -255,7 +255,7 @@ INDEX_HTML = """<!doctype html>
   <div id="chat-screen" class="panel">
     <div class="chat-log" id="chat-log"></div>
     <div class="composer">
-      <button class="icon ghost" id="mic-btn" title="Hold to talk" style="display:none">🎤</button>
+      <button class="icon ghost" id="mic-btn" title="Tap to talk" style="display:none">🎤</button>
       <input type="text" id="msg-input" placeholder="Type your reply…">
       <button id="send-btn">Send</button>
     </div>
@@ -436,36 +436,66 @@ function speak(text) {
 
 function setupVoiceInput() {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRec) return; // Safari and some browsers don't support this - mic stays hidden
+  if (!SpeechRec) return; // browser has no speech recognition - mic stays hidden
   recognition = new SpeechRec();
   recognition.lang = 'en-US';
-  recognition.interimResults = false;
+  recognition.continuous = false;
+  // Words appear while the student speaks, so they can see it is working.
+  recognition.interimResults = true;
   recognition.maxAlternatives = 1;
-  recognition.onresult = (e) => {
-    $('msg-input').value = e.results[0][0].transcript;
-  };
-  recognition.onerror = () => { recognitionActive = false; $('mic-btn').classList.remove('recording'); };
-  recognition.onend = () => { recognitionActive = false; $('mic-btn').classList.remove('recording'); };
 
   const micBtn = $('mic-btn');
-  micBtn.style.display = 'flex';
-  const start = (e) => {
-    e.preventDefault();
-    if (recognitionActive) return;
+  let voiceError = null;
+
+  // The button follows what the browser reports, not what was clicked: red
+  // only once listening has really started.
+  recognition.onstart = () => {
     recognitionActive = true;
+    voiceError = null;
     micBtn.classList.add('recording');
-    try { recognition.start(); } catch (err) { /* already started, ignore */ }
+    micBtn.setAttribute('aria-label', 'Listening — tap to stop');
+    setStatus('chat-status', 'Listening…', 'waking');
   };
-  const stop = (e) => {
+  recognition.onresult = (e) => {
+    let text = '';
+    for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
+    $('msg-input').value = text;
+  };
+  recognition.onerror = (e) => { voiceError = e.error; };
+  recognition.onend = () => {
+    recognitionActive = false;
+    micBtn.classList.remove('recording');
+    micBtn.setAttribute('aria-label', 'Tap to talk');
+    if (voiceError && voiceError !== 'aborted') {
+      const why = {
+        'no-speech': "I didn't hear anything. Tap the mic and speak.",
+        'not-allowed': 'The microphone is blocked for this site. Allow it in your browser settings, or type instead.',
+        'service-not-allowed': 'This browser is not letting the site use speech recognition. Type instead.',
+        'audio-capture': 'No microphone found. Type instead.',
+        'network': 'Voice input needs an internet connection. Type instead.',
+      }[voiceError] || 'Voice input did not work. Type instead.';
+      setStatus('chat-status', `${why} (${voiceError})`, 'offline');
+    } else if (lastSavedAt) {
+      showSaved();
+    } else {
+      setStatus('chat-status', '');
+    }
+  };
+
+  // A plain click, not touchstart: the HTML standard only counts a finished
+  // tap (touchend) or a click as the user really acting, and Safari is
+  // strict about that for the microphone.
+  micBtn.addEventListener('click', (e) => {
     e.preventDefault();
-    if (!recognitionActive) return;
-    recognition.stop();
-  };
-  micBtn.addEventListener('mousedown', start);
-  micBtn.addEventListener('touchstart', start);
-  micBtn.addEventListener('mouseup', stop);
-  micBtn.addEventListener('mouseleave', stop);
-  micBtn.addEventListener('touchend', stop);
+    if (recognitionActive) { recognition.stop(); return; }
+    $('msg-input').value = '';
+    try {
+      recognition.start();
+    } catch (err) {
+      setStatus('chat-status', 'Voice input did not start. Tap the mic again.', 'offline');
+    }
+  });
+  micBtn.style.display = 'flex';
 }
 
 // Try an empty passphrase first - if no access code is configured server-side,
