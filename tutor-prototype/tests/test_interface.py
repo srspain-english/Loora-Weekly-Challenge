@@ -70,6 +70,13 @@ class PageTest(ServerTestCase, unittest.TestCase):
         self.assertIn("SILENCE_MS", self.html)
         self.assertIn("cancelListening();", self.html)
 
+    def test_voice_never_reads_formatting_symbols(self) -> None:
+        # Juno marks corrections with **double asterisks**, and the voice
+        # read them out as "asterisk". They are stripped before speaking and
+        # shown as a highlight on screen instead.
+        self.assertIn("new SpeechSynthesisUtterance(speakable(text))", self.html)
+        self.assertIn("text.split('**')", self.html)
+
     def test_mic_says_why_it_failed(self) -> None:
         # Shows the words as they are spoken, and the reason when it fails,
         # instead of failing silently.

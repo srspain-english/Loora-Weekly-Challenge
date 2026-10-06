@@ -174,6 +174,8 @@ INDEX_HTML = """<!doctype html>
   .juno-line.long{font-size:24px;line-height:1.3}
   .juno-line.longer{font-size:20px;line-height:1.4}
   .juno-line.waiting{color:var(--muted)}
+  .juno-line strong{font-weight:400;color:var(--accent-hi)}
+  .line strong, #help-text strong{font-weight:600;color:var(--ink)}
   #mic-btn{
     --orb:clamp(118px,22vh,180px);
     position:relative;width:var(--orb);height:var(--orb);border-radius:50%;padding:0;flex-shrink:0;
@@ -470,6 +472,26 @@ function show(id) {
 
 let junoLine = '';
 
+// Juno sometimes marks a correction with **double asterisks**. On screen
+// that part is highlighted; out loud the symbols are dropped, or the
+// voice reads them as "asterisk".
+function fillRich(el, text) {
+  el.textContent = '';
+  text.split('**').forEach((part, i) => {
+    const clean = part.replace(/[*#`]/g, '');
+    if (i % 2) {
+      const b = document.createElement('strong');
+      b.textContent = clean;
+      el.appendChild(b);
+    } else {
+      el.appendChild(document.createTextNode(clean));
+    }
+  });
+}
+function speakable(text) {
+  return text.replace(/[*#`]/g, '').replace(/_{2,}/g, ' blank ');
+}
+
 function addLine(who, text) {
   const row = document.createElement('div');
   row.className = 'line ' + who;
@@ -478,7 +500,7 @@ function addLine(who, text) {
   name.textContent = who === 'juno' ? 'Juno' : 'You';
   const body = document.createElement('span');
   body.className = 'text';
-  body.textContent = text;
+  fillRich(body, text);
   row.append(name, body);
   const log = $('chat-log');
   log.appendChild(row);
@@ -487,7 +509,7 @@ function addLine(who, text) {
 
 function setJunoLine(text, waiting) {
   const el = $('juno-line');
-  el.textContent = text;
+  fillRich(el, text);
   el.classList.toggle('long', text.length > 110 && text.length <= 220);
   el.classList.toggle('longer', text.length > 220);
   el.classList.toggle('waiting', !!waiting);
@@ -626,7 +648,7 @@ function pickVoice(voices) {
 function speak(text) {
   if (!$('speak-toggle').checked || !window.speechSynthesis || paused) return;
   window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
+  const u = new SpeechSynthesisUtterance(speakable(text));
   u.lang = 'en-US';
   u.rate = 1;
   u.pitch = 1;
@@ -810,7 +832,7 @@ $('help-btn').onclick = async () => {
     const data = await api('/api/help', {}, {
       onWaking: () => { $('help-text').textContent = 'Juno se está despertando, un momento…'; },
     });
-    $('help-text').textContent = data.help;
+    fillRich($('help-text'), data.help);
   } catch (e) {
     $('help-text').textContent = e.message;
   } finally {
