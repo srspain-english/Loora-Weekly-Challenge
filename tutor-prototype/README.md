@@ -41,10 +41,14 @@ to the terminal and gets written back into that student's memory file.
   produces the structured recap at the end.
 - `web.py` — the same logic served as a browser page (imports `tutor.py`
   directly). Runs locally with no setup beyond the API key, or deploys to a
-  host like Render — see **Deploying it** below. Includes real voice: hold
-  the mic button to speak (Chrome/Brave/Edge — Safari doesn't support the
-  browser speech API this uses), and Juno's replies are read aloud by
-  default.
+  host like Render — see **Deploying it** below. The class screen is
+  voice-first: tap the orange mic to speak and what you say is sent when you
+  stop (most reliable in Chrome/Brave/Edge; Safari's speech support is
+  patchy, and "Type instead" is always there). Juno's replies are read aloud
+  by default. **Pause** stops Juno and the class clock; **Help me** explains
+  in Spanish what Juno asked and how to answer, without adding anything to
+  the class transcript (capped at 15 per class, since each one is a paid
+  request).
 - `scenarios.json` — eleven Business English scenario packs, nine role-plays
   each (99 in total), each built on one target expression, each pack
   spanning A2 to C1:

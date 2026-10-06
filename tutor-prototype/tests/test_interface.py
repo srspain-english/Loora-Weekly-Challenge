@@ -104,13 +104,18 @@ class PageTest(ServerTestCase, unittest.TestCase):
     def test_offers_a_personal_code_field(self) -> None:
         self.assertIn('id="student-code"', self.html)
 
-    def test_visual_identity_is_unchanged(self) -> None:
-        # The brief was to change only what was needed. These are the tokens
-        # and faces the rest of S&R's material shares.
+    def test_keeps_sr_brand_accent_and_fonts(self) -> None:
+        # The class screen went dark, but the S&R orange and typefaces the
+        # rest of S&R's material shares are kept.
         self.assertIn("--accent:#FF4A1C", self.html)
-        self.assertIn("--bg:#FFFDF9", self.html)
         self.assertIn("Space+Grotesk", self.html)
         self.assertIn("Instrument+Sans", self.html)
+
+    def test_class_screen_has_pause_help_and_typing(self) -> None:
+        for el in ('id="pause-btn"', 'id="help-btn"', 'id="end-btn"',
+                   'id="type-toggle"', 'id="call-clock"', 'id="juno-line"',
+                   "/api/help"):
+            self.assertIn(el, self.html)
 
 
 if __name__ == "__main__":

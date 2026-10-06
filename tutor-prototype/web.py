@@ -54,6 +54,19 @@ FEEDBACK_PATH = tutor.DATA_DIR / "feedback.jsonl"
 # between classes without having to be given a code first.
 STUDENT_COOKIE_MAX_AGE = 365 * 24 * 3600
 
+# "Help me" during a class. Capped per class: each press is a paid request.
+MAX_HELP_PER_CALL = 15
+HELP_SYSTEM = (
+    "A Spanish-speaking adult is in a live English conversation class with an "
+    "AI teacher called Juno. They pressed 'Help me' because they don't know "
+    "how to answer. Reply in Spanish, in plain text with no markdown, in under "
+    "90 words:\n"
+    "1. What Juno just said or asked, explained simply.\n"
+    "2. One or two short answers in English they could say, suited to CEFR "
+    "level {level}, each followed by its meaning in Spanish in brackets.\n"
+    "Don't correct the student and don't continue the conversation yourself."
+)
+
 # Per-browser-session state, keyed by a random cookie value. Necessary as
 # soon as more than one person can reach this server at once - a single
 # global dict (fine for one local user) would let concurrent students
@@ -64,115 +77,182 @@ INDEX_HTML = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0E131D">
 <title>Juno Teaching Assistant</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Instrument+Sans:wght@400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif&display=swap');
 
   :root{
-    --bg:#FFFDF9; --bg-sunk:#F3EEE1; --card:#FFFFFF;
-    --ink:#17130E; --ink-soft:#3A332A; --muted:#8B8073;
-    --line:#E8E0CE; --accent:#FF4A1C; --accent-tint:#FFF1E8;
+    color-scheme:dark;
+    --bg:#0E131D; --surface:#171E2B; --surface-2:#1F2737;
+    --line:rgba(255,255,255,.09);
+    --ink:#F4EEE4; --ink-soft:#C9CCD3; --muted:#8A92A2;
+    --accent:#FF4A1C; --accent-hi:#FF8A5C; --accent-tint:rgba(255,74,28,.12);
+    --ok:#5FD0A0; --warn:#E3A33B; --bad:#FF7A6B;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink-soft);font-family:'Instrument Sans',system-ui,sans-serif}
-  h1,h2{font-family:'Space Grotesk',sans-serif;color:var(--ink)}
-  .wrap{max-width:640px;margin:0 auto;padding:28px 18px 60px}
-  .brand{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
-  .brand-mark{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px}
-  .brand-sub{color:var(--muted);font-size:13px}
-  .lede{color:var(--muted);font-size:14px;margin:0 0 26px}
-  .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}
-  label{display:block;font-size:12.5px;color:var(--muted);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em}
+  [hidden]{display:none !important}
+  html,body{margin:0}
+  body{
+    min-height:100vh;min-height:100dvh;color:var(--ink-soft);
+    background-color:var(--bg);
+    background-image:radial-gradient(120% 60% at 50% 0%, #1E2638 0%, var(--bg) 62%);
+    background-attachment:fixed;
+    font-family:'Instrument Sans',system-ui,sans-serif;font-size:15px;
+  }
+  h1,h2,h3{font-family:'Space Grotesk',sans-serif;color:var(--ink)}
+  .app{
+    max-width:480px;margin:0 auto;min-height:100vh;min-height:100dvh;
+    display:flex;flex-direction:column;
+    padding:20px 18px calc(20px + env(safe-area-inset-bottom));
+  }
+
+  /* Top bar and intro, on every screen except the class itself */
+  .topbar{display:flex;align-items:center;gap:10px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+  .live-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);flex-shrink:0}
+  .brand-mark{color:var(--ink)}
+  #feedback-btn{margin-left:auto;padding:7px 14px;font-size:12px;letter-spacing:.04em;text-transform:none}
+  .lede{font-family:'Instrument Serif',Georgia,serif;color:var(--ink);font-size:30px;line-height:1.2;margin:26px 0 24px}
+  body.in-call .topbar, body.in-call .lede{display:none}
+  body.in-call .app{height:100vh;height:100dvh;min-height:0;overflow:hidden}
+
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px}
+  label{display:block;font-size:12px;color:var(--muted);margin:16px 0 7px;text-transform:uppercase;letter-spacing:.08em}
   label:first-child{margin-top:0}
+  .hint{text-transform:none;letter-spacing:0;color:var(--muted)}
   input[type=text], input[type=password], select, textarea{
-    width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;
-    font-family:inherit;font-size:14px;background:var(--bg);color:var(--ink);
+    width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:12px;
+    font-family:inherit;font-size:16px;background:var(--surface-2);color:var(--ink);
   }
+  input:focus, select:focus, textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
   textarea{resize:vertical}
+  input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
   button{
-    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14px;cursor:pointer;
-    border:none;border-radius:999px;padding:11px 20px;background:var(--accent);color:#fff;
+    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:15px;cursor:pointer;
+    border:none;border-radius:999px;padding:13px 22px;background:var(--accent);color:#fff;
   }
-  button:disabled{opacity:.5;cursor:default}
+  button:disabled{opacity:.45;cursor:default}
   button.ghost{background:transparent;color:var(--ink-soft);border:1px solid var(--line)}
-  button.icon{
-    width:44px;height:44px;padding:0;border-radius:50%;font-size:18px;
-    display:flex;align-items:center;justify-content:center;flex-shrink:0;
-  }
-  button.icon.recording{background:#B0392A}
+  button:focus-visible{outline:2px solid var(--accent-hi);outline-offset:3px}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-  .error{color:#B0392A;font-size:13px;margin-top:10px}
+  .error{color:var(--bad);font-size:13.5px;margin-top:10px}
+  .error:empty{display:none}
+
   #auth-screen{display:block}
-  #setup-screen{display:none}
-  #chat-screen{display:none}
-  #report-screen{display:none}
-  .chat-log{
-    height:420px;overflow-y:auto;border:1px solid var(--line);border-radius:14px;
-    padding:16px;background:var(--bg-sunk);display:flex;flex-direction:column;gap:10px;
-  }
-  .bubble{max-width:82%;padding:10px 14px;border-radius:14px;font-size:14.5px;line-height:1.5}
-  .bubble.juno{background:var(--card);border:1px solid var(--line);align-self:flex-start}
-  .bubble.you{background:var(--ink);color:#F6F1E7;align-self:flex-end}
-  .bubble .who{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;opacity:.6;margin-bottom:3px}
-  .composer{display:flex;gap:8px;margin-top:12px}
-  .composer input[type=text]{
-    flex:1;padding:11px 14px;border:1px solid var(--line);border-radius:999px;
-    font-family:inherit;font-size:14.5px;background:var(--bg);color:var(--ink);
-  }
-  .voice-row{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--muted)}
-  .voice-row label{margin:0;text-transform:none;letter-spacing:0;display:flex;align-items:center;gap:6px;cursor:pointer}
-  .recap h3{font-family:'Space Grotesk',sans-serif;font-size:14px;margin:20px 0 8px;color:var(--ink)}
-  .recap h3:first-child{margin-top:0}
-  .recap table{width:100%;border-collapse:collapse;font-size:13.5px}
-  .recap td{padding:6px 4px;border-bottom:1px solid var(--line);vertical-align:top}
-  .recap ul{margin:4px 0;padding-left:20px;font-size:13.8px}
-  .tag{font-size:10px;text-transform:uppercase;color:var(--muted);font-family:ui-monospace,monospace}
-  #feedback-btn{margin-left:auto;padding:6px 14px;font-size:12px}
+  #setup-screen, #chat-screen, #report-screen{display:none}
+
+  .status{display:flex;align-items:center;justify-content:center;gap:7px;font-size:12.5px;color:var(--muted);margin-top:10px;min-height:18px;text-align:center}
+  .status .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0}
+  .status:has(#chat-status-text:empty) .dot, .status:has(#setup-status-text:empty) .dot{display:none}
+  .status.waking .dot{background:var(--warn);animation:pulse 1.4s ease-in-out infinite}
+  .status.offline .dot{background:var(--bad)}
+  .status.offline{color:var(--ink-soft)}
+  .status.saved .dot{background:var(--ok)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+  .notice{background:var(--accent-tint);border:1px solid rgba(255,74,28,.45);border-radius:16px;padding:16px 18px;margin-bottom:16px;font-size:14px}
+  .notice h2{font-size:15px;margin:0 0 6px}
+  .notice .row{margin-top:12px}
   #feedback-panel{margin-bottom:18px}
   #feedback-thanks{color:var(--muted);font-size:13px;margin-top:8px}
-  .status{
-    display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);
-    margin-top:10px;min-height:18px;
-  }
-  .status .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0}
-  .status.waking .dot{background:#C8871B;animation:pulse 1.4s ease-in-out infinite}
-  .status.offline .dot{background:#B0392A}
-  .status.saved .dot{background:#4E7A3A}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
-  @media (prefers-reduced-motion:reduce){.status.waking .dot{animation:none}}
-  .notice{
-    background:var(--accent-tint);border:1px solid var(--accent);border-radius:12px;
-    padding:14px 16px;margin-bottom:16px;font-size:13.5px;color:var(--ink-soft);
-  }
-  .notice h2{font-size:14px;margin:0 0 6px}
-  .notice .row{margin-top:10px}
-  .privacy{
-    margin-top:18px;padding-top:14px;border-top:1px solid var(--line);
-    font-size:12.5px;color:var(--muted);line-height:1.55;
-  }
+  .privacy{margin-top:20px;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);line-height:1.55}
   .privacy summary{cursor:pointer;color:var(--ink-soft);font-weight:500}
   .privacy ul{margin:8px 0 0;padding-left:18px}
   .privacy li{margin-bottom:4px}
-  #mic-btn.recording{position:relative}
-  #mic-btn.recording::after{
-    content:"";position:absolute;inset:-4px;border-radius:50%;
-    border:2px solid #B0392A;animation:pulse 1.2s ease-in-out infinite;
+
+  /* The class */
+  #chat-screen{flex:1;flex-direction:column;min-height:0}
+  .call-top{display:flex;align-items:center;gap:10px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);padding-top:4px}
+  #call-clock{margin-left:auto;letter-spacing:.06em;font-variant-numeric:tabular-nums}
+  .stage{display:flex;flex-direction:column;align-items:center;text-align:center;padding:clamp(14px,3.5vh,30px) 4px 4px;flex-shrink:0}
+  .juno-line{
+    font-family:'Instrument Serif',Georgia,serif;color:var(--ink);
+    font-size:30px;line-height:1.22;margin:0 0 clamp(26px,4.5vh,40px);max-height:28vh;overflow-y:auto;
+    min-height:1.22em;
   }
-  @media (prefers-color-scheme: dark){
-    :root{
-      --bg:#161310; --bg-sunk:#1E1A15; --card:#211D18;
-      --ink:#F5EFE3; --ink-soft:#DCD3C2; --muted:#9C917F;
-      --line:#332C23; --accent:#FF6A42; --accent-tint:#2E1E17;
-    }
-    .bubble.you{color:#17130E}
+  .juno-line.long{font-size:24px;line-height:1.3}
+  .juno-line.longer{font-size:20px;line-height:1.4}
+  .juno-line.waiting{color:var(--muted)}
+  #mic-btn{
+    --orb:clamp(118px,22vh,180px);
+    position:relative;width:var(--orb);height:var(--orb);border-radius:50%;padding:0;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;color:#2A120A;
+    background:radial-gradient(circle at 34% 28%, #FFC6AA 0%, #FF8A5C 24%, #FF4A1C 58%, #C2330E 100%);
+    box-shadow:0 20px 70px rgba(255,74,28,.32), inset 0 -12px 26px rgba(0,0,0,.18);
+    transition:transform .15s ease, filter .3s ease;
+  }
+  #mic-btn::before{content:"";position:absolute;inset:-20px;border-radius:50%;border:1px solid rgba(255,138,92,.28);pointer-events:none}
+  #mic-btn svg{width:26%;height:26%}
+  #mic-btn:active{transform:scale(.97)}
+  #mic-btn:disabled{filter:grayscale(.9) brightness(.55);opacity:1}
+  #mic-btn.recording::after{
+    content:"";position:absolute;inset:-14px;border-radius:50%;
+    border:2px solid var(--accent-hi);animation:ring 1.4s ease-out infinite;
+  }
+  @keyframes ring{0%{transform:scale(.92);opacity:.9}100%{transform:scale(1.2);opacity:0}}
+  #mic-btn.speaking{animation:breathe 2.4s ease-in-out infinite}
+  @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}
+  #mic-btn.thinking{animation:dim 1.6s ease-in-out infinite}
+  @keyframes dim{0%,100%{filter:brightness(1)}50%{filter:brightness(.72)}}
+  .orb-state{margin-top:clamp(24px,4vh,34px);font-size:14px;letter-spacing:.06em;color:var(--muted);min-height:20px}
+  .heard{margin-top:6px;font-size:15px;color:var(--ink);min-height:22px;max-width:100%}
+
+  /* Help or typing open: make room by shrinking the orb and Juno's line. */
+  #chat-screen:has(#help-card:not([hidden])) #mic-btn, #chat-screen:has(#type-row:not([hidden])) #mic-btn{--orb:clamp(76px,12vh,116px)}
+  #chat-screen:has(#help-card:not([hidden])) #mic-btn::before, #chat-screen:has(#type-row:not([hidden])) #mic-btn::before{inset:-12px}
+  #chat-screen:has(#help-card:not([hidden])) .juno-line, #chat-screen:has(#type-row:not([hidden])) .juno-line{font-size:22px;line-height:1.3;max-height:20vh;margin-bottom:22px}
+  #chat-screen:has(#help-card:not([hidden])) .orb-state, #chat-screen:has(#type-row:not([hidden])) .orb-state{margin-top:14px}
+  .help-card{
+    background:var(--surface-2);border:1px solid rgba(255,74,28,.4);border-radius:16px;
+    padding:14px 16px;margin-top:10px;font-size:15px;line-height:1.5;color:var(--ink);
+    max-height:32vh;overflow-y:auto;flex-shrink:0;
+  }
+  .help-head{display:flex;align-items:center;justify-content:space-between;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent-hi);margin-bottom:6px}
+  #help-text{white-space:pre-line}
+
+  .transcript{
+    flex:1 1 0;min-height:0;overflow-y:auto;margin-top:10px;padding:4px 2px;
+    display:flex;flex-direction:column;gap:14px;
+    -webkit-mask-image:linear-gradient(to bottom, transparent 0, #000 40px);
+    mask-image:linear-gradient(to bottom, transparent 0, #000 40px);
+  }
+  .transcript > :first-child{margin-top:auto}
+  .line{display:grid;grid-template-columns:48px 1fr;gap:12px;font-size:15px;line-height:1.5}
+  .line .who{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);padding-top:4px}
+  .line.juno .text{color:var(--ink-soft)}
+  .line.you .text{color:var(--ink)}
+
+  .type-row{display:flex;gap:8px;margin-top:12px}
+  .type-row input[type=text]{flex:1;border-radius:999px;padding:12px 16px}
+  .call-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:12px}
+  .pill{
+    background:var(--surface-2);color:var(--ink);border:1px solid var(--line);border-radius:16px;
+    padding:17px 8px;font-family:'Instrument Sans',sans-serif;font-weight:500;font-size:16px;
+  }
+  .pill.light{background:#F4EEE4;color:#121722;border-color:transparent}
+  .call-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;font-size:13px;color:var(--muted)}
+  .call-foot label{margin:0;text-transform:none;letter-spacing:0;font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer}
+  .link{background:none;border:none;border-radius:0;padding:4px 0;color:var(--ink-soft);font-family:inherit;font-weight:500;font-size:13px;text-decoration:underline;text-underline-offset:3px}
+
+  /* Report */
+  .recap-title{font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:30px;margin:0 0 6px}
+  .recap h3{font-size:14px;margin:22px 0 8px}
+  .recap p{margin:0;line-height:1.55}
+  .recap table{width:100%;border-collapse:collapse;font-size:14px}
+  .recap td{padding:8px 4px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.5}
+  .recap ul{margin:4px 0;padding-left:20px;font-size:14px;line-height:1.55}
+  .tag{font-size:10px;text-transform:uppercase;color:var(--muted);font-family:ui-monospace,monospace}
+
+  @media (prefers-reduced-motion:reduce){
+    #mic-btn.recording::after, #mic-btn.speaking, #mic-btn.thinking, .status.waking .dot{animation:none}
   }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="brand">
-    <span class="brand-mark">Juno</span><span class="brand-sub">Teaching Assistant</span>
+<div class="app">
+  <div class="topbar">
+    <span class="live-dot"></span><span class="brand-mark">Juno</span><span>· S&amp;R Spain</span>
     <button class="ghost" id="feedback-btn" style="display:none">Feedback</button>
   </div>
   <p class="lede" id="lede">Loading…</p>
@@ -206,10 +286,10 @@ INDEX_HTML = """<!doctype html>
   </div>
 
   <div id="setup-screen" class="panel">
-    <label for="student">Student name</label>
-    <input type="text" id="student" placeholder="e.g. maria">
+    <label for="student">Your name</label>
+    <input type="text" id="student" placeholder="e.g. Maria">
 
-    <label for="student-code">Your personal code <span style="text-transform:none;color:var(--muted)">(optional — lets Juno recognise you on any device)</span></label>
+    <label for="student-code">Your personal code <span class="hint">(optional — lets Juno recognise you on any device)</span></label>
     <input type="text" id="student-code" placeholder="Leave empty if your teacher hasn't given you one">
 
     <label for="mode">Mode</label>
@@ -228,12 +308,12 @@ INDEX_HTML = """<!doctype html>
     </select>
 
     <div id="scenario-row" style="display:none">
-      <label for="scenario">Scenario <span style="text-transform:none;color:var(--muted)">(optional — random if left as "Surprise me")</span></label>
+      <label for="scenario">Scenario <span class="hint">(optional — random if left as "Surprise me")</span></label>
       <select id="scenario"><option value="">Surprise me</option></select>
     </div>
 
-    <div class="row" style="margin-top:18px">
-      <button id="start-btn">Start call</button>
+    <div class="row" style="margin-top:22px">
+      <button id="start-btn" style="flex:1">Start class</button>
     </div>
     <div class="error" id="start-error"></div>
     <div class="status" id="setup-status"><span class="dot"></span><span id="setup-status-text"></span></div>
@@ -252,28 +332,51 @@ INDEX_HTML = """<!doctype html>
     </div>
   </div>
 
-  <div id="chat-screen" class="panel">
-    <div class="chat-log" id="chat-log"></div>
-    <div class="composer">
-      <button class="icon ghost" id="mic-btn" title="Tap to talk" style="display:none">🎤</button>
+  <div id="chat-screen">
+    <div class="call-top">
+      <span class="live-dot"></span><span id="call-label">Juno · Free talk</span>
+      <span id="call-clock">0:00</span>
+    </div>
+
+    <div class="stage">
+      <p class="juno-line" id="juno-line" aria-live="polite"></p>
+      <button id="mic-btn" aria-label="Tap to talk" title="Tap to talk">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+      </button>
+      <div class="orb-state" id="orb-state">Tap to talk</div>
+      <div class="heard" id="heard"></div>
+    </div>
+
+    <div class="help-card" id="help-card" hidden>
+      <div class="help-head"><span>Ayuda</span><button class="link" id="help-close">Cerrar</button></div>
+      <div id="help-text"></div>
+    </div>
+
+    <div class="transcript" id="chat-log"></div>
+
+    <div class="type-row" id="type-row" hidden>
       <input type="text" id="msg-input" placeholder="Type your reply…">
       <button id="send-btn">Send</button>
     </div>
-    <div class="voice-row">
-      <label><input type="checkbox" id="speak-toggle" checked> Juno speaks replies aloud</label>
-    </div>
     <div class="status" id="chat-status"><span class="dot"></span><span id="chat-status-text"></span></div>
-    <div class="row" style="margin-top:12px;justify-content:flex-end">
-      <button class="ghost" id="end-btn">End call</button>
-    </div>
     <div class="error" id="chat-error"></div>
+
+    <div class="call-actions">
+      <button class="pill" id="pause-btn">Pause</button>
+      <button class="pill" id="help-btn">Help me</button>
+      <button class="pill light" id="end-btn">End</button>
+    </div>
+    <div class="call-foot">
+      <button class="link" id="type-toggle">Type instead</button>
+      <label><input type="checkbox" id="speak-toggle" checked> Juno speaks aloud</label>
+    </div>
   </div>
 
   <div id="report-screen" class="panel">
-    <h2 style="margin-top:0">Class recap</h2>
+    <h2 class="recap-title">Class recap</h2>
     <div id="recap" class="recap"></div>
-    <div class="row" style="margin-top:20px">
-      <button id="again-btn">New call</button>
+    <div class="row" style="margin-top:24px">
+      <button id="again-btn">New class</button>
     </div>
   </div>
 </div>
@@ -283,6 +386,8 @@ const $ = (id) => document.getElementById(id);
 let scenarios = null;
 let recognition = null;
 let recognitionActive = false;
+let voiceAvailable = false;
+let paused = false;
 
 // Three failures look identical to a student and need different words:
 // the free tier waking up (wait), no connection (check your wifi), and a
@@ -348,22 +453,116 @@ function showSaved(iso) {
     : `${Math.round(secs / 60)} min ago`;
   setStatus('chat-status', `Saved ${when}`, 'saved');
 }
-setInterval(() => { if (lastSavedAt) showSaved(); }, 15000);
+setInterval(() => { if (lastSavedAt && $('chat-status').className.includes('saved')) showSaved(); }, 15000);
 
 function show(id) {
-  ['auth-screen', 'setup-screen', 'chat-screen', 'report-screen'].forEach(
-    (s) => ($(s).style.display = s === id ? 'block' : 'none')
-  );
+  ['auth-screen', 'setup-screen', 'chat-screen', 'report-screen'].forEach((s) => {
+    $(s).style.display = s !== id ? 'none' : (s === 'chat-screen' ? 'flex' : 'block');
+  });
+  document.body.classList.toggle('in-call', id === 'chat-screen');
+}
+
+// --- The class screen ------------------------------------------------------
+// Juno's newest line is shown large above the mic; everything before it
+// goes into the transcript underneath.
+
+let junoLine = '';
+
+function addLine(who, text) {
+  const row = document.createElement('div');
+  row.className = 'line ' + who;
+  const name = document.createElement('span');
+  name.className = 'who';
+  name.textContent = who === 'juno' ? 'Juno' : 'You';
+  const body = document.createElement('span');
+  body.className = 'text';
+  body.textContent = text;
+  row.append(name, body);
+  const log = $('chat-log');
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+}
+
+function setJunoLine(text, waiting) {
+  const el = $('juno-line');
+  el.textContent = text;
+  el.classList.toggle('long', text.length > 110 && text.length <= 220);
+  el.classList.toggle('longer', text.length > 220);
+  el.classList.toggle('waiting', !!waiting);
+  el.scrollTop = 0;
 }
 
 function bubble(who, text) {
-  const el = document.createElement('div');
-  el.className = 'bubble ' + (who === 'juno' ? 'juno' : 'you');
-  el.innerHTML = `<span class="who">${who === 'juno' ? 'Juno' : 'You'}</span>${text.replace(/</g, '&lt;')}`;
-  const log = $('chat-log');
-  log.appendChild(el);
-  log.scrollTop = log.scrollHeight;
+  if (who === 'juno') {
+    if (junoLine) addLine('juno', junoLine);
+    junoLine = text;
+    setJunoLine(text);
+  } else {
+    if (junoLine) { addLine('juno', junoLine); junoLine = ''; }
+    addLine('you', text);
+  }
 }
+
+function clearChat() {
+  $('chat-log').innerHTML = '';
+  junoLine = '';
+  setJunoLine('');
+  $('heard').textContent = '';
+  $('help-card').hidden = true;
+  $('chat-error').textContent = '';
+}
+
+function setOrb(state, label) {
+  const b = $('mic-btn');
+  b.classList.toggle('recording', state === 'listening');
+  b.classList.toggle('speaking', state === 'speaking');
+  b.classList.toggle('thinking', state === 'thinking');
+  $('orb-state').textContent = label;
+}
+function idleOrb() {
+  if (paused) { setOrb('idle', 'Paused'); return; }
+  setOrb('idle', voiceAvailable ? 'Tap to talk' : 'Type your answer below');
+}
+
+const MODE_NAMES = { free: 'Free talk', business: 'Business English', structured: 'Structured class' };
+let clockStart = 0, clockPausedTotal = 0, pausedAt = 0, clockTimer = null;
+function drawClock() {
+  const now = pausedAt || Date.now();
+  const s = Math.max(0, Math.floor((now - clockStart - clockPausedTotal) / 1000));
+  $('call-clock').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+function startClass(mode) {
+  $('call-label').textContent = 'Juno · ' + (MODE_NAMES[mode] || MODE_NAMES.free);
+  paused = false;
+  $('pause-btn').textContent = 'Pause';
+  $('mic-btn').disabled = false;
+  $('help-btn').disabled = false;
+  $('type-row').hidden = voiceAvailable;
+  $('type-toggle').textContent = voiceAvailable ? 'Type instead' : 'Hide typing';
+  clockStart = Date.now(); clockPausedTotal = 0; pausedAt = 0;
+  clearInterval(clockTimer);
+  clockTimer = setInterval(drawClock, 1000);
+  drawClock();
+  show('chat-screen');
+  idleOrb();
+}
+function stopClass() {
+  clearInterval(clockTimer);
+  clockTimer = null;
+  paused = false;
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+}
+
+function openTyping() {
+  $('type-row').hidden = false;
+  $('type-toggle').textContent = 'Hide typing';
+  $('msg-input').focus();
+}
+$('type-toggle').onclick = () => {
+  if ($('type-row').hidden) { openTyping(); return; }
+  $('type-row').hidden = true;
+  $('type-toggle').textContent = 'Type instead';
+};
 
 // Named voices known to sound natural rather than robotic, checked in order.
 // Covers Chrome/Edge (cloud voices) and Safari/macOS (Enhanced/Premium voices).
@@ -423,7 +622,7 @@ function pickVoice(voices) {
 }
 
 function speak(text) {
-  if (!$('speak-toggle').checked || !window.speechSynthesis) return;
+  if (!$('speak-toggle').checked || !window.speechSynthesis || paused) return;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'en-US';
@@ -431,12 +630,47 @@ function speak(text) {
   u.pitch = 1;
   const voice = pickVoice(cachedVoices.length ? cachedVoices : window.speechSynthesis.getVoices());
   if (voice) u.voice = voice;
+  u.onstart = () => { if (!paused && !recognitionActive) setOrb('speaking', 'Juno is speaking'); };
+  u.onend = u.onerror = () => { if (!recognitionActive && !sending) idleOrb(); };
   window.speechSynthesis.speak(u);
 }
+$('speak-toggle').onchange = () => {
+  if (!$('speak-toggle').checked && window.speechSynthesis) window.speechSynthesis.cancel();
+};
 
+let voiceSetUp = false;
 function setupVoiceInput() {
+  if (voiceSetUp) return;
+  voiceSetUp = true;
+  const micBtn = $('mic-btn');
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRec) return; // browser has no speech recognition - mic stays hidden
+  let voiceError = null;
+  let heard = '';
+
+  // A plain click, not touchstart: the HTML standard only counts a finished
+  // tap (touchend) or a click as the user really acting, and Safari is
+  // strict about that for the microphone.
+  micBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (paused || sending) return;
+    if (!recognition) {
+      openTyping();
+      setStatus('chat-status', "Voice isn't available in this browser. Type your answer instead.", 'offline');
+      return;
+    }
+    if (recognitionActive) { recognition.stop(); return; }
+    if (window.speechSynthesis) window.speechSynthesis.cancel();  // tapping interrupts Juno
+    heard = '';
+    $('heard').textContent = '';
+    try {
+      recognition.start();
+    } catch (err) {
+      setStatus('chat-status', 'Voice input did not start. Tap the mic again.', 'offline');
+    }
+  });
+
+  if (!SpeechRec) return;  // no speech recognition here: the mic opens typing instead
+  voiceAvailable = true;
   recognition = new SpeechRec();
   recognition.lang = 'en-US';
   recognition.continuous = false;
@@ -444,29 +678,26 @@ function setupVoiceInput() {
   recognition.interimResults = true;
   recognition.maxAlternatives = 1;
 
-  const micBtn = $('mic-btn');
-  let voiceError = null;
-
-  // The button follows what the browser reports, not what was clicked: red
-  // only once listening has really started.
+  // The orb follows what the browser reports, not what was tapped: it only
+  // shows "Listening" once listening has really started.
   recognition.onstart = () => {
     recognitionActive = true;
     voiceError = null;
-    micBtn.classList.add('recording');
-    micBtn.setAttribute('aria-label', 'Listening — tap to stop');
-    setStatus('chat-status', 'Listening…', 'waking');
+    setOrb('listening', 'Listening…');
   };
   recognition.onresult = (e) => {
     let text = '';
     for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
-    $('msg-input').value = text;
+    heard = text;
+    $('heard').textContent = text;
   };
   recognition.onerror = (e) => { voiceError = e.error; };
   recognition.onend = () => {
     recognitionActive = false;
-    micBtn.classList.remove('recording');
-    micBtn.setAttribute('aria-label', 'Tap to talk');
+    $('heard').textContent = '';
+    if (paused) { idleOrb(); return; }
     if (voiceError && voiceError !== 'aborted') {
+      idleOrb();
       const why = {
         'no-speech': "I didn't hear anything. Tap the mic and speak.",
         'not-allowed': 'The microphone is blocked for this site. Allow it in your browser settings, or type instead.',
@@ -475,28 +706,61 @@ function setupVoiceInput() {
         'network': 'Voice input needs an internet connection. Type instead.',
       }[voiceError] || 'Voice input did not work. Type instead.';
       setStatus('chat-status', `${why} (${voiceError})`, 'offline');
-    } else if (lastSavedAt) {
-      showSaved();
-    } else {
-      setStatus('chat-status', '');
+      if (voiceError !== 'no-speech') openTyping();
+      return;
     }
+    const said = heard.trim();
+    heard = '';
+    if (!said) { idleOrb(); return; }
+    $('msg-input').value = said;
+    // With the typing box open the student may want to fix the words first;
+    // otherwise what they said goes straight to Juno, like a real call.
+    if ($('type-row').hidden) sendMessage(); else { idleOrb(); $('msg-input').focus(); }
   };
-
-  // A plain click, not touchstart: the HTML standard only counts a finished
-  // tap (touchend) or a click as the user really acting, and Safari is
-  // strict about that for the microphone.
-  micBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    if (recognitionActive) { recognition.stop(); return; }
-    $('msg-input').value = '';
-    try {
-      recognition.start();
-    } catch (err) {
-      setStatus('chat-status', 'Voice input did not start. Tap the mic again.', 'offline');
-    }
-  });
-  micBtn.style.display = 'flex';
 }
+
+// --- Pause and Help me -----------------------------------------------------
+
+$('pause-btn').onclick = () => {
+  paused = !paused;
+  if (paused) {
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    if (recognitionActive && recognition) recognition.abort();
+    pausedAt = Date.now();
+    drawClock();
+    $('pause-btn').textContent = 'Resume';
+    $('mic-btn').disabled = true;
+    $('help-btn').disabled = true;
+  } else {
+    clockPausedTotal += Date.now() - pausedAt;
+    pausedAt = 0;
+    $('pause-btn').textContent = 'Pause';
+    $('mic-btn').disabled = false;
+    $('help-btn').disabled = false;
+  }
+  idleOrb();
+};
+
+let helpLoading = false;
+$('help-btn').onclick = async () => {
+  if (helpLoading || paused) return;
+  helpLoading = true;
+  $('help-btn').disabled = true;
+  $('help-card').hidden = false;
+  $('help-text').textContent = 'Un momento…';
+  try {
+    const data = await api('/api/help', {}, {
+      onWaking: () => { $('help-text').textContent = 'Juno se está despertando, un momento…'; },
+    });
+    $('help-text').textContent = data.help;
+  } catch (e) {
+    $('help-text').textContent = e.message;
+  } finally {
+    helpLoading = false;
+    $('help-btn').disabled = paused;
+  }
+};
+$('help-close').onclick = () => { $('help-card').hidden = true; };
 
 // Try an empty passphrase first - if no access code is configured server-side,
 // this succeeds immediately and the auth screen never has to be shown.
@@ -544,13 +808,13 @@ $('resume-btn').onclick = () => {
   if (!pendingResume) return;
   currentCallId = pendingResume.call_id;
   classInProgress = true;
-  $('chat-log').innerHTML = '';
+  clearChat();
   pendingResume.transcript.forEach((m) => {
     bubble(m.role === 'user' ? 'you' : 'juno', m.content);
   });
   showSaved(pendingResume.updated_at);
   $('resume-notice').style.display = 'none';
-  show('chat-screen');
+  startClass(pendingResume.mode);
 };
 
 $('resume-report-btn').onclick = async () => {
@@ -642,12 +906,12 @@ $('start-btn').onclick = async () => {
         'waking') });
     currentCallId = data.call_id;
     classInProgress = true;
-    $('chat-log').innerHTML = '';
+    clearChat();
     bubble('juno', data.reply);
-    speak(data.reply);
     showSaved(data.saved_at);
     setStatus('setup-status', '');
-    show('chat-screen');
+    startClass(mode);
+    speak(data.reply);
   } catch (e) {
     $('start-error').textContent = e.message;
     setStatus('setup-status', '', e.kind === 'network' ? 'offline' : '');
@@ -671,33 +935,42 @@ async function sendMessage() {
   const key = `${currentCallId || 'call'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   sending = true;
+  const before = junoLine;
   bubble('you', text);
+  setJunoLine('…', true);
   input.value = '';
+  $('help-card').hidden = true;
   $('send-btn').disabled = true;
   $('msg-input').disabled = true;
+  $('help-btn').disabled = true;
   $('chat-error').textContent = '';
-  setStatus('chat-status', 'Juno is thinking…');
+  setOrb('thinking', 'Juno is thinking…');
   try {
     const data = await api('/api/message', { text, idempotency_key: key },
       { onWaking: () => setStatus('chat-status',
           'Juno is waking up — one moment.', 'waking') });
     bubble('juno', data.reply);
-    speak(data.reply);
     showSaved(data.saved_at);
+    sending = false;
+    idleOrb();
+    speak(data.reply);
     if (data.turns_left !== undefined && data.turns_left <= 5) {
       $('chat-error').textContent =
-        `${data.turns_left} messages left in this class — press End call when you're ready for your report.`;
+        `${data.turns_left} messages left in this class — press End when you're ready for your report.`;
     }
   } catch (e) {
+    setJunoLine(before);
     $('chat-error').textContent = e.message;
     setStatus('chat-status',
       e.kind === 'network' ? 'Not connected — your class is saved.' : '',
       e.kind === 'network' ? 'offline' : 'saved');
   } finally {
     sending = false;
+    if (!$('mic-btn').classList.contains('speaking')) idleOrb();
     $('send-btn').disabled = false;
     $('msg-input').disabled = false;
-    input.focus();
+    $('help-btn').disabled = paused;
+    if (!$('type-row').hidden) input.focus();
   }
 }
 $('send-btn').onclick = sendMessage;
@@ -724,12 +997,15 @@ $('end-btn').onclick = async () => {
   $('end-btn').disabled = true;
   $('send-btn').disabled = true;
   $('chat-error').textContent = '';
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+  if (recognitionActive && recognition) recognition.abort();
   // The report reads the whole conversation back, so it is the slowest thing
   // in the app - saying so beats a button that looks broken.
   setStatus('chat-status', 'Writing your report — this takes a few seconds…', 'waking');
   try {
     const data = await api('/api/end', { call_id: currentCallId });
     classInProgress = false;
+    stopClass();
     renderRecap(data.report);
     setStatus('chat-status', '');
     show('report-screen');
@@ -743,7 +1019,7 @@ $('end-btn').onclick = async () => {
 };
 
 // Closing the tab mid-class no longer loses anything, but the report is only
-// written on End call, so it is still worth a word.
+// written on End, so it is still worth a word.
 window.addEventListener('beforeunload', (e) => {
   if (!classInProgress) return;
   e.preventDefault();
@@ -915,6 +1191,9 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/feedback":
                 self._require_auth(session)
                 self._handle_feedback(session, data)
+            elif self.path == "/api/help":
+                self._require_auth(session)
+                self._handle_help(session, data)
             else:
                 self._send_json({"error": "not found"}, 404)
         except _AuthError:
@@ -1180,6 +1459,56 @@ class Handler(BaseHTTPRequestHandler):
         store.finish_call(call["call_id"], report)
         session["call_id"] = None
         self._send_json({"report": report})
+
+    def _handle_help(self, session: dict, data: dict) -> None:
+        """Explain, in Spanish, what Juno just asked and how to answer it.
+
+        An aside, not a turn: nothing is added to the class transcript, so the
+        conversation and the report are unchanged by asking for help.
+        """
+        call = self._current_call(session)
+        if not call:
+            self._send_json({"error": "No class in progress."}, 400)
+            return
+        if (store.DAILY_COST_CEILING_USD > 0
+                and store.daily_spend() >= store.DAILY_COST_CEILING_USD):
+            self._send_json({"error": "Juno has reached today's usage limit. "
+                                      "Please try again tomorrow."}, 429)
+            return
+        used = session.setdefault("help_used", {}).get(call["call_id"], 0)
+        if used >= MAX_HELP_PER_CALL:
+            self._send_json({"error": "Ya has pedido mucha ayuda en esta clase. "
+                                      "Inténtalo con tus palabras: no pasa nada "
+                                      "si no es perfecto."}, 429)
+            return
+
+        recent = call["transcript"][1:][-6:]  # skip the synthetic opener
+        if not recent:
+            self._send_json({"error": "Nothing to help with yet."}, 400)
+            return
+        lines = "\n".join(
+            f"{'Juno' if m['role'] == 'assistant' else 'Student'}: {m['content']}"
+            for m in recent
+        )
+
+        response = client.beta.messages.create(
+            model=tutor.MODEL,
+            max_tokens=2000,
+            system=HELP_SYSTEM.format(level=call["level"]),
+            messages=[{"role": "user",
+                       "content": f"The class so far, most recent last:\n\n{lines}"}],
+            output_config={"effort": "low"},
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
+        self._record_metrics(response, student_id=call["student_id"],
+                             call_id=call["call_id"], kind="help")
+        text = next((b.text for b in response.content if b.type == "text"), "").strip()
+        if response.stop_reason == "refusal" or not text:
+            text = ("Ahora mismo no puedo ayudarte con esto. "
+                    "Intenta responder con una frase sencilla.")
+        session["help_used"][call["call_id"]] = used + 1
+        self._send_json({"help": text})
 
     def _handle_abandon(self, session: dict, data: dict) -> None:
         call = self._current_call(session)
