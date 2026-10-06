@@ -60,6 +60,16 @@ class PageTest(ServerTestCase, unittest.TestCase):
         self.assertIn("micBtn.addEventListener('click'", self.html)
         self.assertNotIn("addEventListener('touchstart'", self.html)
 
+    def test_mic_never_looks_dead(self) -> None:
+        # Safari can accept start() and then report nothing, or hear the
+        # words and never finish. The tap must show something at once, a
+        # silent failure must become a message, and heard words must still
+        # be sent when the browser never says it has finished.
+        self.assertIn("Starting the microphone…", self.html)
+        self.assertIn("finish('no-start')", self.html)
+        self.assertIn("SILENCE_MS", self.html)
+        self.assertIn("cancelListening();", self.html)
+
     def test_mic_says_why_it_failed(self) -> None:
         # Shows the words as they are spoken, and the reason when it fails,
         # instead of failing silently.

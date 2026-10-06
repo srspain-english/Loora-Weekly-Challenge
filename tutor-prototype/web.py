@@ -388,6 +388,8 @@ let recognition = null;
 let recognitionActive = false;
 let voiceAvailable = false;
 let paused = false;
+let micBusy = false;
+let cancelListening = () => {};
 
 // Three failures look identical to a student and need different words:
 // the free tier waking up (wait), no connection (check your wifi), and a
@@ -630,8 +632,8 @@ function speak(text) {
   u.pitch = 1;
   const voice = pickVoice(cachedVoices.length ? cachedVoices : window.speechSynthesis.getVoices());
   if (voice) u.voice = voice;
-  u.onstart = () => { if (!paused && !recognitionActive) setOrb('speaking', 'Juno is speaking'); };
-  u.onend = u.onerror = () => { if (!recognitionActive && !sending) idleOrb(); };
+  u.onstart = () => { if (!paused && !micBusy) setOrb('speaking', 'Juno is speaking'); };
+  u.onend = u.onerror = () => { if (!micBusy && !sending) idleOrb(); };
   window.speechSynthesis.speak(u);
 }
 $('speak-toggle').onchange = () => {
@@ -646,6 +648,72 @@ function setupVoiceInput() {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   let voiceError = null;
   let heard = '';
+  let attempt = 0;
+  let timers = [];
+  let silenceTimer = null;
+
+  // Safari can accept start() and then never report anything, or hear the
+  // words and never say it has finished. These limits stop either from
+  // looking like a dead button.
+  const START_MS = 4000;    // not listening by then: it didn't start
+  const SILENCE_MS = 2500;  // no new words for this long: the student stopped
+  const END_MS = 1500;      // asked to stop but never ended: end it ourselves
+  const MAX_MS = 30000;     // never listen longer than this
+
+  const later = (ms, fn) => {
+    const mine = attempt;
+    timers.push(setTimeout(() => { if (mine === attempt && micBusy) fn(); }, ms));
+  };
+  const clearTimers = () => {
+    timers.forEach(clearTimeout);
+    timers = [];
+    clearTimeout(silenceTimer);
+  };
+  const askToStop = () => {
+    try { recognition.stop(); } catch (err) { /* already stopped */ }
+    later(END_MS, () => finish());
+  };
+
+  function finish(reason) {
+    if (!micBusy) return;
+    micBusy = false;
+    recognitionActive = false;
+    clearTimers();
+    $('heard').textContent = '';
+    if (paused) { idleOrb(); return; }
+    const said = heard.trim();
+    heard = '';
+    const problem = voiceError || reason;
+    if (!said && problem && problem !== 'aborted') {
+      idleOrb();
+      const why = {
+        'no-speech': "I didn't hear anything. Tap the mic and speak.",
+        'not-allowed': 'The microphone is blocked for this site. Allow it in your browser settings, or type instead.',
+        'service-not-allowed': 'This browser is not letting the site use speech recognition. Type instead.',
+        'audio-capture': 'No microphone found. Type instead.',
+        'network': 'Voice input needs an internet connection. Type instead.',
+        'no-start': "The microphone didn't start in this browser. Check it is allowed to use the microphone, or type instead.",
+      }[problem] || 'Voice input did not work. Type instead.';
+      setStatus('chat-status', `${why} (${problem})`, 'offline');
+      if (problem !== 'no-speech') openTyping();
+      return;
+    }
+    if (!said) { idleOrb(); return; }
+    $('msg-input').value = said;
+    // With the typing box open the student may want to fix the words first;
+    // otherwise what they said goes straight to Juno, like a real call.
+    if ($('type-row').hidden) sendMessage(); else { idleOrb(); $('msg-input').focus(); }
+  }
+
+  cancelListening = () => {
+    if (!micBusy) return;
+    micBusy = false;
+    recognitionActive = false;
+    heard = '';
+    clearTimers();
+    $('heard').textContent = '';
+    try { recognition.abort(); } catch (err) { /* already stopped */ }
+  };
 
   // A plain click, not touchstart: the HTML standard only counts a finished
   // tap (touchend) or a click as the user really acting, and Safari is
@@ -658,15 +726,27 @@ function setupVoiceInput() {
       setStatus('chat-status', "Voice isn't available in this browser. Type your answer instead.", 'offline');
       return;
     }
-    if (recognitionActive) { recognition.stop(); return; }
-    if (window.speechSynthesis) window.speechSynthesis.cancel();  // tapping interrupts Juno
+    if (micBusy) { askToStop(); return; }  // tap again to stop
+    if (window.speechSynthesis && window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+    attempt += 1;
+    micBusy = true;
+    voiceError = null;
     heard = '';
     $('heard').textContent = '';
+    // Respond to the tap straight away, before the browser confirms.
+    setOrb('listening', 'Starting the microphone…');
     try {
       recognition.start();
     } catch (err) {
-      setStatus('chat-status', 'Voice input did not start. Tap the mic again.', 'offline');
+      finish('no-start');
+      return;
     }
+    later(START_MS, () => {
+      if (recognitionActive) return;
+      try { recognition.abort(); } catch (err) { /* never started */ }
+      finish('no-start');
+    });
+    later(MAX_MS, askToStop);
   });
 
   if (!SpeechRec) return;  // no speech recognition here: the mic opens typing instead
@@ -678,45 +758,23 @@ function setupVoiceInput() {
   recognition.interimResults = true;
   recognition.maxAlternatives = 1;
 
-  // The orb follows what the browser reports, not what was tapped: it only
-  // shows "Listening" once listening has really started.
   recognition.onstart = () => {
+    if (!micBusy) return;
     recognitionActive = true;
-    voiceError = null;
     setOrb('listening', 'Listening…');
   };
   recognition.onresult = (e) => {
+    if (!micBusy) return;
+    recognitionActive = true;
     let text = '';
     for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
     heard = text;
     $('heard').textContent = text;
+    clearTimeout(silenceTimer);
+    silenceTimer = setTimeout(() => { if (micBusy) askToStop(); }, SILENCE_MS);
   };
   recognition.onerror = (e) => { voiceError = e.error; };
-  recognition.onend = () => {
-    recognitionActive = false;
-    $('heard').textContent = '';
-    if (paused) { idleOrb(); return; }
-    if (voiceError && voiceError !== 'aborted') {
-      idleOrb();
-      const why = {
-        'no-speech': "I didn't hear anything. Tap the mic and speak.",
-        'not-allowed': 'The microphone is blocked for this site. Allow it in your browser settings, or type instead.',
-        'service-not-allowed': 'This browser is not letting the site use speech recognition. Type instead.',
-        'audio-capture': 'No microphone found. Type instead.',
-        'network': 'Voice input needs an internet connection. Type instead.',
-      }[voiceError] || 'Voice input did not work. Type instead.';
-      setStatus('chat-status', `${why} (${voiceError})`, 'offline');
-      if (voiceError !== 'no-speech') openTyping();
-      return;
-    }
-    const said = heard.trim();
-    heard = '';
-    if (!said) { idleOrb(); return; }
-    $('msg-input').value = said;
-    // With the typing box open the student may want to fix the words first;
-    // otherwise what they said goes straight to Juno, like a real call.
-    if ($('type-row').hidden) sendMessage(); else { idleOrb(); $('msg-input').focus(); }
-  };
+  recognition.onend = () => finish();
 }
 
 // --- Pause and Help me -----------------------------------------------------
@@ -725,7 +783,7 @@ $('pause-btn').onclick = () => {
   paused = !paused;
   if (paused) {
     if (window.speechSynthesis) window.speechSynthesis.cancel();
-    if (recognitionActive && recognition) recognition.abort();
+    cancelListening();
     pausedAt = Date.now();
     drawClock();
     $('pause-btn').textContent = 'Resume';
@@ -998,7 +1056,7 @@ $('end-btn').onclick = async () => {
   $('send-btn').disabled = true;
   $('chat-error').textContent = '';
   if (window.speechSynthesis) window.speechSynthesis.cancel();
-  if (recognitionActive && recognition) recognition.abort();
+  cancelListening();
   // The report reads the whole conversation back, so it is the slowest thing
   // in the app - saying so beats a button that looks broken.
   setStatus('chat-status', 'Writing your report — this takes a few seconds…', 'waking');
