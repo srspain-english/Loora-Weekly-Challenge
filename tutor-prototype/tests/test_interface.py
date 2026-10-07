@@ -79,6 +79,13 @@ class PageTest(ServerTestCase, unittest.TestCase):
         self.assertIn("if (!speak(data.reply)) autoListen();", self.html)
         self.assertIn("autoListenBlocked = true;", self.html)
 
+    def test_a_thinking_pause_does_not_send_half_a_sentence(self) -> None:
+        # Chrome ended listening at the first ~1 s pause. Where it works,
+        # it now keeps listening, and Juno waits for 4 s of silence.
+        self.assertIn("recognition.continuous = keepListening;", self.html)
+        self.assertIn("const SILENCE_MS = 4000;", self.html)
+        self.assertIn("tap when you’re done", self.html)
+
     def test_says_when_it_is_the_students_turn(self) -> None:
         self.assertIn("Your turn — tap to talk", self.html)
 

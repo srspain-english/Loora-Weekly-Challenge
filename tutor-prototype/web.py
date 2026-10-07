@@ -720,9 +720,10 @@ function setupVoiceInput() {
   // words and never say it has finished. These limits stop either from
   // looking like a dead button.
   const START_MS = 4000;    // not listening by then: it didn't start
-  const SILENCE_MS = 2500;  // no new words for this long: the student stopped
+  const SILENCE_MS = 4000;  // no new words for this long: the student has finished
+  const NOTHING_MS = 10000; // not a single word by then: stop quietly
   const END_MS = 1500;      // asked to stop but never ended: end it ourselves
-  const MAX_MS = 30000;     // never listen longer than this
+  const MAX_MS = 60000;     // never listen longer than this
 
   const later = (ms, fn) => {
     const mine = attempt;
@@ -827,6 +828,12 @@ function setupVoiceInput() {
       try { recognition.abort(); } catch (err) { /* never started */ }
       finish('no-start');
     });
+    later(NOTHING_MS, () => {
+      if (heard.trim()) return;
+      voiceError = 'no-speech';
+      try { recognition.abort(); } catch (err) { /* already stopped */ }
+      finish();
+    });
     later(MAX_MS, askToStop);
   };
 
@@ -834,7 +841,14 @@ function setupVoiceInput() {
   voiceAvailable = true;
   recognition = new SpeechRec();
   recognition.lang = 'en-US';
-  recognition.continuous = false;
+  // Chrome and Edge, left to themselves, decide the student has finished at
+  // the first short pause - about a second - and send half a sentence while
+  // they look for the next English word. Their "keep listening" mode doesn't
+  // stop at pauses, so there Juno decides instead: SILENCE_MS without a new
+  // word. Safari's version of that mode is broken (results can stop arriving
+  // entirely), so Safari and every iPhone browser keep single-sentence mode.
+  const keepListening = !!window.chrome && !/iPad|iPhone|iPod/.test(navigator.userAgent);
+  recognition.continuous = keepListening;
   // Words appear while the student speaks, so they can see it is working.
   recognition.interimResults = true;
   recognition.maxAlternatives = 1;
@@ -851,6 +865,7 @@ function setupVoiceInput() {
     for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
     heard = text;
     $('heard').textContent = text;
+    if (text.trim()) setOrb('listening', 'Listening… tap when you’re done');
     clearTimeout(silenceTimer);
     silenceTimer = setTimeout(() => { if (micBusy) askToStop(); }, SILENCE_MS);
   };
