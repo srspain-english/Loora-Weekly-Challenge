@@ -70,6 +70,15 @@ class PageTest(ServerTestCase, unittest.TestCase):
         self.assertIn("SILENCE_MS", self.html)
         self.assertIn("cancelListening();", self.html)
 
+    def test_hands_free_listens_after_juno_speaks(self) -> None:
+        # The mic switches on by itself once Juno has finished, with a
+        # switch to turn that off, and falls back to tapping quietly where
+        # the browser won't allow it.
+        self.assertIn('id="handsfree-toggle"', self.html)
+        self.assertIn("function autoListen(", self.html)
+        self.assertIn("if (!speak(data.reply)) autoListen();", self.html)
+        self.assertIn("autoListenBlocked = true;", self.html)
+
     def test_says_when_it_is_the_students_turn(self) -> None:
         self.assertIn("Your turn — tap to talk", self.html)
 

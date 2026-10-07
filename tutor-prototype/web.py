@@ -234,6 +234,7 @@ INDEX_HTML = """<!doctype html>
   }
   .pill.light{background:#F4EEE4;color:#121722;border-color:transparent}
   .call-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;font-size:13px;color:var(--muted)}
+  .foot-toggles{display:flex;gap:16px;flex-wrap:wrap;justify-content:flex-end}
   .call-foot label{margin:0;text-transform:none;letter-spacing:0;font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer}
   .link{background:none;border:none;border-radius:0;padding:4px 0;color:var(--ink-soft);font-family:inherit;font-weight:500;font-size:13px;text-decoration:underline;text-underline-offset:3px}
 
@@ -370,7 +371,10 @@ INDEX_HTML = """<!doctype html>
     </div>
     <div class="call-foot">
       <button class="link" id="type-toggle">Type instead</button>
-      <label><input type="checkbox" id="speak-toggle" checked> Juno speaks aloud</label>
+      <div class="foot-toggles">
+        <label><input type="checkbox" id="handsfree-toggle" checked> Hands-free</label>
+        <label><input type="checkbox" id="speak-toggle" checked> Juno speaks</label>
+      </div>
     </div>
   </div>
 
@@ -392,6 +396,9 @@ let voiceAvailable = false;
 let paused = false;
 let micBusy = false;
 let cancelListening = () => {};
+let startListening = () => {};
+let autoListenBlocked = false;
+let autoTimer = null;
 
 // Three failures look identical to a student and need different words:
 // the free tier waking up (wait), no connection (check your wifi), and a
@@ -578,6 +585,7 @@ function stopClass() {
 }
 
 function openTyping() {
+  if (micBusy) { cancelListening(); idleOrb(); }
   $('type-row').hidden = false;
   $('type-toggle').textContent = 'Hide typing';
   $('msg-input').focus();
@@ -586,7 +594,35 @@ $('type-toggle').onclick = () => {
   if ($('type-row').hidden) { openTyping(); return; }
   $('type-row').hidden = true;
   $('type-toggle').textContent = 'Type instead';
+  autoListen();
 };
+
+// Hands-free: once Juno has finished, the mic switches on by itself. If the
+// browser won't allow that (or the student says nothing), it quietly falls
+// back to tapping - a tap always works.
+const HANDSFREE_KEY = 'juno-handsfree';
+try {
+  if (localStorage.getItem(HANDSFREE_KEY) === 'off') $('handsfree-toggle').checked = false;
+} catch (e) { /* storage unavailable: hands-free stays on */ }
+$('handsfree-toggle').onchange = () => {
+  const on = $('handsfree-toggle').checked;
+  try { localStorage.setItem(HANDSFREE_KEY, on ? 'on' : 'off'); } catch (e) { /* not remembered */ }
+  if (on) { autoListen(); return; }
+  clearTimeout(autoTimer);
+  if (micBusy) { cancelListening(); idleOrb(); }
+};
+function autoListen(delay) {
+  clearTimeout(autoTimer);
+  // The short wait keeps the mic from catching the tail of Juno's own voice.
+  autoTimer = setTimeout(() => {
+    if (!$('handsfree-toggle').checked || autoListenBlocked || !voiceAvailable) return;
+    if (!classInProgress || paused || sending || micBusy || helpLoading) return;
+    if (!$('type-row').hidden || $('end-btn').disabled) return;
+    if (!document.body.classList.contains('in-call')) return;
+    if (window.speechSynthesis && window.speechSynthesis.speaking) return;
+    startListening(true);
+  }, delay === undefined ? 400 : delay);
+}
 
 // Named voices known to sound natural rather than robotic, checked in order.
 // Covers Chrome/Edge (cloud voices) and Safari/macOS (Enhanced/Premium voices).
@@ -646,7 +682,7 @@ function pickVoice(voices) {
 }
 
 function speak(text) {
-  if (!$('speak-toggle').checked || !window.speechSynthesis || paused) return;
+  if (!$('speak-toggle').checked || !window.speechSynthesis || paused) return false;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(speakable(text));
   u.lang = 'en-US';
@@ -655,8 +691,13 @@ function speak(text) {
   const voice = pickVoice(cachedVoices.length ? cachedVoices : window.speechSynthesis.getVoices());
   if (voice) u.voice = voice;
   u.onstart = () => { if (!paused && !micBusy) setOrb('speaking', 'Juno is speaking'); };
-  u.onend = u.onerror = () => { if (!micBusy && !sending) idleOrb(); };
+  u.onend = u.onerror = () => {
+    if (micBusy || sending) return;
+    idleOrb();
+    autoListen();
+  };
   window.speechSynthesis.speak(u);
+  return true;
 }
 $('speak-toggle').onchange = () => {
   if (!$('speak-toggle').checked && window.speechSynthesis) window.speechSynthesis.cancel();
@@ -673,6 +714,7 @@ function setupVoiceInput() {
   let attempt = 0;
   let timers = [];
   let silenceTimer = null;
+  let attemptAuto = false;
 
   // Safari can accept start() and then never report anything, or hear the
   // words and never say it has finished. These limits stop either from
@@ -706,6 +748,16 @@ function setupVoiceInput() {
     const said = heard.trim();
     heard = '';
     const problem = voiceError || reason;
+    if (!said && problem && problem !== 'aborted' && attemptAuto) {
+      // A hands-free attempt that came to nothing stays quiet; the student
+      // can still tap. If this browser won't start the mic on its own, stop
+      // trying for the rest of the class.
+      if (['no-start', 'not-allowed', 'service-not-allowed', 'audio-capture'].includes(problem)) {
+        autoListenBlocked = true;
+      }
+      idleOrb();
+      return;
+    }
     if (!said && problem && problem !== 'aborted') {
       idleOrb();
       const why = {
@@ -749,14 +801,21 @@ function setupVoiceInput() {
       return;
     }
     if (micBusy) { askToStop(); return; }  // tap again to stop
+    clearTimeout(autoTimer);
+    startListening(false);
+  });
+
+  startListening = (auto) => {
+    if (!recognition || micBusy) return;
     if (window.speechSynthesis && window.speechSynthesis.speaking) window.speechSynthesis.cancel();
     attempt += 1;
     micBusy = true;
+    attemptAuto = auto;
     voiceError = null;
     heard = '';
     $('heard').textContent = '';
-    // Respond to the tap straight away, before the browser confirms.
-    setOrb('listening', 'Starting the microphone…');
+    // Respond straight away, before the browser confirms it is listening.
+    setOrb('listening', auto ? 'Listening… just speak' : 'Starting the microphone…');
     try {
       recognition.start();
     } catch (err) {
@@ -769,7 +828,7 @@ function setupVoiceInput() {
       finish('no-start');
     });
     later(MAX_MS, askToStop);
-  });
+  };
 
   if (!SpeechRec) return;  // no speech recognition here: the mic opens typing instead
   voiceAvailable = true;
@@ -783,7 +842,7 @@ function setupVoiceInput() {
   recognition.onstart = () => {
     if (!micBusy) return;
     recognitionActive = true;
-    setOrb('listening', 'Listening…');
+    setOrb('listening', attemptAuto ? 'Listening… just speak' : 'Listening…');
   };
   recognition.onresult = (e) => {
     if (!micBusy) return;
@@ -819,11 +878,14 @@ $('pause-btn').onclick = () => {
     $('help-btn').disabled = false;
   }
   idleOrb();
+  if (!paused) autoListen(300);
 };
 
 let helpLoading = false;
 $('help-btn').onclick = async () => {
   if (helpLoading || paused) return;
+  clearTimeout(autoTimer);
+  if (micBusy) { cancelListening(); idleOrb(); }
   helpLoading = true;
   $('help-btn').disabled = true;
   $('help-card').hidden = false;
@@ -895,6 +957,7 @@ $('resume-btn').onclick = () => {
   showSaved(pendingResume.updated_at);
   $('resume-notice').style.display = 'none';
   startClass(pendingResume.mode);
+  autoListen();
 };
 
 $('resume-report-btn').onclick = async () => {
@@ -991,7 +1054,7 @@ $('start-btn').onclick = async () => {
     showSaved(data.saved_at);
     setStatus('setup-status', '');
     startClass(mode);
-    speak(data.reply);
+    if (!speak(data.reply)) autoListen();
   } catch (e) {
     $('start-error').textContent = e.message;
     setStatus('setup-status', '', e.kind === 'network' ? 'offline' : '');
@@ -1033,7 +1096,7 @@ async function sendMessage() {
     showSaved(data.saved_at);
     sending = false;
     idleOrb();
-    speak(data.reply);
+    if (!speak(data.reply)) autoListen();
     if (data.turns_left !== undefined && data.turns_left <= 5) {
       $('chat-error').textContent =
         `${data.turns_left} messages left in this class — press End when you're ready for your report.`;

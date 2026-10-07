@@ -45,7 +45,9 @@ to the terminal and gets written back into that student's memory file.
   voice-first: tap the orange mic to speak and what you say is sent when you
   stop (most reliable in Chrome/Brave/Edge; Safari's speech support is
   patchy, and "Type instead" is always there). Juno's replies are read aloud
-  by default. **Pause** stops Juno and the class clock; **Help me** explains
+  by default. **Hands-free** (on by default, remembered per device) switches
+  the mic on by itself when Juno finishes; where a browser won't allow that,
+  it quietly falls back to tapping. **Pause** stops Juno and the class clock; **Help me** explains
   in Spanish what Juno asked and how to answer, without adding anything to
   the class transcript (capped at 15 per class, since each one is a paid
   request).
