@@ -70,6 +70,9 @@ class PageTest(ServerTestCase, unittest.TestCase):
         self.assertIn("SILENCE_MS", self.html)
         self.assertIn("cancelListening();", self.html)
 
+    def test_says_when_it_is_the_students_turn(self) -> None:
+        self.assertIn("Your turn — tap to talk", self.html)
+
     def test_voice_never_reads_formatting_symbols(self) -> None:
         # Juno marks corrections with **double asterisks**, and the voice
         # read them out as "asterisk". They are stripped before speaking and

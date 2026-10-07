@@ -545,7 +545,7 @@ function setOrb(state, label) {
 }
 function idleOrb() {
   if (paused) { setOrb('idle', 'Paused'); return; }
-  setOrb('idle', voiceAvailable ? 'Tap to talk' : 'Type your answer below');
+  setOrb('idle', voiceAvailable ? 'Your turn — tap to talk' : 'Your turn — type your answer below');
 }
 
 const MODE_NAMES = { free: 'Free talk', business: 'Business English', structured: 'Structured class' };
