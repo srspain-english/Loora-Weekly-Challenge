@@ -1,0 +1,234 @@
+{
+  "business_packs": [
+    {
+      "id": "abadia_retuerta",
+      "label": "Abadía Retuerta — Hospitality",
+      "scenarios": [
+        {
+          "id": "on_the_ball",
+          "title": "Always On the Ball",
+          "expression": "to be on the ball",
+          "cefr": "B1",
+          "role": "my manager at Abadía Retuerta",
+          "domain": "whether I am always on the ball at work — in meetings, with guests, during busy shifts",
+          "correction_instruction": "correct me gently if I make a mistake",
+          "push_instruction": "speak clearly and at a comfortable pace",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "piece_of_cake",
+          "title": "A Piece of Cake at Work",
+          "expression": "to be a piece of cake",
+          "cefr": "B1",
+          "role": "a new colleague at the hotel",
+          "domain": "which parts of my job I find easy — a piece of cake — and which parts I find more difficult",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "use the expression naturally in your questions",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "clear_up",
+          "title": "Clearing Up Confusion",
+          "expression": "to clear up",
+          "cefr": "B1",
+          "role": "a guest at Abadía Retuerta with a small misunderstanding or question about their booking, the restaurant, or the facilities",
+          "domain": "I work at the hotel and I will try to clear up the confusion professionally",
+          "correction_instruction": "correct me gently if I make a mistake",
+          "push_instruction": "keep the conversation realistic and professional",
+          "closing_instruction": "after the conversation, tell me what I did well"
+        },
+        {
+          "id": "frown_on",
+          "title": "What's Frowned On Here?",
+          "expression": "to frown on",
+          "cefr": "B1",
+          "role": "my colleague at a luxury hotel",
+          "domain": "things that are frowned on in our workplace — with guests, in the team, and in professional situations",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to give detailed answers and use the expression naturally",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "mess_up",
+          "title": "When Things Get Messed Up",
+          "expression": "to mess up",
+          "cefr": "B1",
+          "role": "my manager at Abadía Retuerta",
+          "domain": "situations at work where things have been messed up — by me, by a colleague, or by a supplier — and how I handled it",
+          "correction_instruction": "correct my English",
+          "push_instruction": "push me to speak in full sentences",
+          "closing_instruction": "tell me what I learned"
+        },
+        {
+          "id": "make_up",
+          "title": "Making Up and Making Excuses",
+          "expression": "to make up",
+          "cefr": "B1",
+          "role": "my colleague",
+          "domain": "times at work when someone has made up an excuse, or when colleagues have fallen out and had to make up — both meanings",
+          "correction_instruction": "correct my grammar throughout",
+          "push_instruction": "use the expression in both meanings",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "start_from_scratch",
+          "title": "Starting From Scratch",
+          "expression": "to start from scratch",
+          "cefr": "B2",
+          "role": "a business consultant visiting Abadía Retuerta",
+          "domain": "situations where we have had to start something from scratch — a new project, a new process, a new team approach",
+          "correction_instruction": "correct my English",
+          "push_instruction": "push me to be specific and use sophisticated vocabulary",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "barge_in",
+          "title": "Barging In at the Wrong Moment",
+          "expression": "to barge in on",
+          "cefr": "B2",
+          "role": "my colleague at a luxury hotel",
+          "domain": "situations where someone has barged in on a meeting, a guest conversation, or an important moment, and how I handled it",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to sound professional",
+          "closing_instruction": "tell me what I would do differently"
+        },
+        {
+          "id": "blue_moon",
+          "title": "Once in a Blue Moon",
+          "expression": "once in a blue moon",
+          "cefr": "B2",
+          "role": "my manager, in a performance review at Abadía Retuerta",
+          "domain": "things that only happen once in a blue moon at the hotel — rare guest requests, unusual situations, special events",
+          "correction_instruction": "correct my English",
+          "push_instruction": "push me to use the expression naturally",
+          "closing_instruction": "give me feedback on my fluency at the end"
+        }
+      ]
+    },
+    {
+      "id": "general_business",
+      "label": "General Business English",
+      "scenarios": [
+        {
+          "id": "touch_base",
+          "title": "Touching Base",
+          "expression": "to touch base",
+          "cefr": "B1",
+          "role": "a colleague from another team",
+          "domain": "catching up on how a shared project is going after some time apart",
+          "correction_instruction": "correct me gently if I make a mistake",
+          "push_instruction": "push me to give a clear status update, not just 'it's fine'",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "same_page",
+          "title": "Getting on the Same Page",
+          "expression": "to be on the same page",
+          "cefr": "B1",
+          "role": "a colleague from another department",
+          "domain": "making sure we both agree on a plan before it moves forward",
+          "correction_instruction": "correct me if I make a grammar mistake",
+          "push_instruction": "push me to check understanding, not just agree politely",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "circle_back",
+          "title": "Circling Back Later",
+          "expression": "to circle back",
+          "cefr": "B1",
+          "role": "a colleague in a meeting",
+          "domain": "postponing a topic that's taking too long, and agreeing when to revisit it",
+          "correction_instruction": "correct me gently if I make a mistake",
+          "push_instruction": "push me to suggest a specific time or method to follow up",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "keep_in_loop",
+          "title": "Keeping People in the Loop",
+          "expression": "to keep someone in the loop",
+          "cefr": "B1",
+          "role": "a colleague on a cross-team project",
+          "domain": "agreeing how and how often to share updates so nobody is left out of decisions",
+          "correction_instruction": "correct my English",
+          "push_instruction": "push me to give full sentences, not one-word answers",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "push_back",
+          "title": "Pushing Back Professionally",
+          "expression": "to push back",
+          "cefr": "B2",
+          "role": "my manager",
+          "domain": "disagreeing professionally with a decision, a deadline, or a plan",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to justify my position with a reason, not just disagree",
+          "closing_instruction": "give me feedback on how professional I sounded"
+        },
+        {
+          "id": "extra_mile",
+          "title": "Going the Extra Mile",
+          "expression": "to go the extra mile",
+          "cefr": "B2",
+          "role": "my manager, in a performance conversation",
+          "domain": "recognising when someone went beyond what was expected, or explaining why it matters",
+          "correction_instruction": "correct my English",
+          "push_instruction": "push me to give a specific example, not a general statement",
+          "closing_instruction": "tell me what I did well"
+        },
+        {
+          "id": "hit_ground_running",
+          "title": "Hitting the Ground Running",
+          "expression": "to hit the ground running",
+          "cefr": "B2",
+          "role": "my new manager, on my first week on a new project",
+          "domain": "explaining how I plan to get up to speed quickly on a new project or role",
+          "correction_instruction": "correct my English throughout",
+          "push_instruction": "push me to be specific about a plan, not just say I'll work hard",
+          "closing_instruction": "give me feedback at the end"
+        },
+        {
+          "id": "think_outside_box",
+          "title": "Thinking Outside the Box",
+          "expression": "to think outside the box",
+          "cefr": "B2",
+          "role": "my manager, in a brainstorming session",
+          "domain": "generating a genuinely new idea for a problem that standard approaches haven't solved",
+          "correction_instruction": "correct my English",
+          "push_instruction": "push me to be creative and specific, not to repeat an obvious answer",
+          "closing_instruction": "give me feedback on my fluency at the end"
+        },
+        {
+          "id": "read_between_lines",
+          "title": "Reading Between the Lines",
+          "expression": "to read between the lines",
+          "cefr": "C1",
+          "role": "a colleague",
+          "domain": "interpreting what a client or manager really meant in an ambiguous email or comment, beyond the literal words",
+          "correction_instruction": "correct my English throughout, including register and word choice",
+          "push_instruction": "push me to use sophisticated, nuanced vocabulary, not simple restatements",
+          "closing_instruction": "give me feedback at the end"
+        }
+      ]
+    }
+  ],
+  "fluency_techniques": [
+    {
+      "id": "hesitation_fillers",
+      "title": "Hesitation Fillers",
+      "trigger": "a pause of more than three seconds",
+      "instruction": "remind the student to use a filler: well, let me think, actually, you know, or to be honest"
+    },
+    {
+      "id": "speed_rhythm",
+      "title": "Speed & Rhythm",
+      "trigger": "any short, hesitant answer",
+      "instruction": "ask the student to repeat the answer faster and more confidently"
+    },
+    {
+      "id": "connectors",
+      "title": "Connectors",
+      "trigger": "a short answer that could be expanded",
+      "instruction": "push the student to expand it using: however, although, on the other hand, as a result, therefore, in addition, despite"
+    }
+  ]
+}
