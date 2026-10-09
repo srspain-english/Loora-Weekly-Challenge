@@ -34,6 +34,8 @@ class LogsTest(ServerTestCase, unittest.TestCase):
         self.opener = self.new_browser()
         web.ACCESS_PASSPHRASE = ""
         web.SESSIONS.clear()
+        self.auth()
+        self.identify(student="Logged Student")
 
     def _run_class_capturing_logs(self, said: str) -> str:
         buffer = io.StringIO()
@@ -78,7 +80,7 @@ class LogsTest(ServerTestCase, unittest.TestCase):
                 side_effect=RuntimeError(f"boom with {SECRET_LOOKING}"),
             ):
                 status, data = self.post(
-                    "/api/start", {"mode": "free", "student": "x"}
+                    "/api/start", {"mode": "free"}
                 )
         # The class fails, but the value must not be spread any further than
         # the exception that already carried it.

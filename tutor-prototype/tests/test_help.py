@@ -32,6 +32,7 @@ class HelpTest(ServerTestCase, unittest.TestCase):
         web.ACCESS_PASSPHRASE = ""
         web.SESSIONS.clear()
         self.auth()
+        self.identify()
 
     def _start(self):
         with mock.patch.object(web.client.messages, "create",

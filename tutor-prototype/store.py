@@ -194,13 +194,15 @@ def create_student(display_name: str, access_code: str | None = None) -> str:
     who both call themselves Maria get two ids and never see each other's
     memory — which was the whole point of separating these.
     """
+    from access_security import code_hash
+
     conn = connect()
     student_id = "stu_" + secrets.token_urlsafe(12)
     conn.execute(
         "INSERT INTO students (student_id, display_name, name_key, access_code,"
         " created_at, last_seen_at) VALUES (?,?,?,?,?,?)",
         (student_id, display_name.strip() or "Student", name_key(display_name),
-         access_code, _now(), _now()),
+         code_hash(access_code) if access_code else None, _now(), _now()),
     )
     conn.commit()
     return student_id
@@ -271,10 +273,12 @@ def student_by_access_code(code: str) -> dict | None:
     their own code and identity stops depending on the browser they happen to
     be sitting at.
     """
+    from access_security import code_hash
+
     if not code:
         return None
     row = connect().execute(
-        "SELECT * FROM students WHERE access_code = ?", (code.strip(),)
+        "SELECT * FROM students WHERE access_code = ?", (code_hash(code),)
     ).fetchone()
     return dict(row) if row else None
 
@@ -483,7 +487,11 @@ def abandon_call(call_id: str) -> None:
 
 # --- Idempotency -------------------------------------------------------
 
-def replayed_response(key: str) -> dict | None:
+class ReplayConflict(ValueError):
+    """A retry key belongs to a different class; never replay or overwrite it."""
+
+
+def replayed_response(key: str, call_id: str) -> dict | None:
     """The stored answer for a request key we've already handled.
 
     A student on a flaky connection who retries — or a double-clicked Send —
@@ -493,8 +501,10 @@ def replayed_response(key: str) -> dict | None:
     if not key:
         return None
     row = connect().execute(
-        "SELECT response FROM idempotency WHERE key = ?", (key,)
+        "SELECT call_id, response FROM idempotency WHERE key = ?", (key,)
     ).fetchone()
+    if row and row["call_id"] != call_id:
+        raise ReplayConflict()
     return json.loads(row["response"]) if row else None
 
 
@@ -503,11 +513,13 @@ def remember_response(key: str, call_id: str, response: dict) -> None:
         return
     conn = connect()
     conn.execute(
-        "INSERT OR REPLACE INTO idempotency (key, call_id, response, created_at)"
+        "INSERT OR IGNORE INTO idempotency (key, call_id, response, created_at)"
         " VALUES (?,?,?,?)",
         (key, call_id, json.dumps(response), _now()),
     )
     conn.commit()
+    # A simultaneous request must not overwrite another class's cached reply.
+    replayed_response(key, call_id)
 
 
 def prune_idempotency(older_than_seconds: int = 86_400) -> None:

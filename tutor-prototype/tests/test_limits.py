@@ -38,6 +38,10 @@ class LimitsTest(ServerTestCase, unittest.TestCase):
          store.DAILY_COST_CEILING_USD) = self._orig
 
     def _start(self, opener=None, **body):
+        browser = opener or self.opener
+        code = body.pop("access_code", None)
+        if code or not getattr(browser, "identity_token", None):
+            self.identify(browser, student=body.get("student", "Synthetic Student"), access_code=code)
         with mock.patch.object(
             web.client.messages, "create", return_value=fake_reply()
         ):

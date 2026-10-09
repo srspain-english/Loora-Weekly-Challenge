@@ -79,10 +79,22 @@ class ServerTestCase:
     @classmethod
     def setUpClass(cls) -> None:
         cls.tmp = Path(tempfile.mkdtemp())
+        cls._orig_db_path = store.DB_PATH
         store.reset_for_tests(cls.tmp / "juno.db")
         cls._orig_students_dir = tutor.STUDENTS_DIR
         tutor.STUDENTS_DIR = cls.tmp / "students"
         tutor.STUDENTS_DIR.mkdir(parents=True, exist_ok=True)
+        cls._orig_feedback_path = web.FEEDBACK_PATH
+        web.FEEDBACK_PATH = cls.tmp / "feedback.jsonl"
+        # A forgotten per-test fake must fail instead of spending API credit.
+        cls._model_patches = [
+            mock.patch.object(web.client.messages, "create",
+                              side_effect=AssertionError("Model calls must be mocked in tests")),
+            mock.patch.object(web.client.beta.messages, "create",
+                              side_effect=AssertionError("Model calls must be mocked in tests")),
+        ]
+        for patch in cls._model_patches:
+            patch.start()
 
         cls.server = web.ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
         cls.base_url = f"http://127.0.0.1:{cls.server.server_address[1]}"
@@ -94,7 +106,10 @@ class ServerTestCase:
         cls.server.shutdown()
         cls.server.server_close()
         tutor.STUDENTS_DIR = cls._orig_students_dir
-        store.reset_for_tests()
+        web.FEEDBACK_PATH = cls._orig_feedback_path
+        store.reset_for_tests(cls._orig_db_path)
+        for patch in reversed(cls._model_patches):
+            patch.stop()
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     def new_browser(self):
@@ -103,20 +118,35 @@ class ServerTestCase:
             urllib.request.HTTPCookieProcessor(CookieJar())
         )
 
-    def post(self, path: str, body: dict, opener=None):
+    def post(self, path: str, body: dict, opener=None, *, headers=None):
         opener = opener or self.opener
         req = urllib.request.Request(
             f"{self.base_url}{path}",
             data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **(headers or {}),
+                     **({"X-Juno-Identity": opener.identity_token}
+                        if getattr(opener, "identity_token", None) else {})},
             method="POST",
         )
         try:
             with opener.open(req) as resp:
-                return resp.status, json.loads(resp.read())
+                result = json.loads(resp.read())
+                if path == "/api/identity":
+                    opener.identity_token = result["identity_token"]
+                elif path == "/api/signout":
+                    opener.identity_token = None
+                return resp.status, result
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read())
 
     def auth(self, opener=None):
         status, _ = self.post("/api/auth", {"passphrase": ""}, opener)
         assert status == 200, "auth failed in test setup"
+
+    def identify(self, opener=None, *, student="Synthetic Student", access_code=None):
+        body = {"access_code": access_code} if access_code else {
+            "student": student, "new_student": True,
+        }
+        status, result = self.post("/api/identity", body, opener)
+        assert status == 200, result
+        return result

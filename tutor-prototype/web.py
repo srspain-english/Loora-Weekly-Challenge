@@ -32,6 +32,7 @@ import http.cookies
 import json
 import os
 import secrets
+import time
 import sys
 import threading
 import traceback
@@ -40,6 +41,8 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import anthropic
+
+import access_security
 
 import store  # identity, limits, saved calls, cost metrics
 import tutor  # the exact tested logic: prompts, tiers, report schema
@@ -50,9 +53,7 @@ PORT = int(os.environ.get("PORT", 8765))
 ACCESS_PASSPHRASE = os.environ.get("JUNO_ACCESS_PASSPHRASE", "")
 MAX_FEEDBACK_LENGTH = 2000
 FEEDBACK_PATH = tutor.DATA_DIR / "feedback.jsonl"
-# A year: the point of this cookie is that a student stays the same person
-# between classes without having to be given a code first.
-STUDENT_COOKIE_MAX_AGE = 365 * 24 * 3600
+# Student selection is explicit. A legacy student-id cookie is not authentication.
 
 # "Help me" during a class. Capped per class: each press is a paid request.
 MAX_HELP_PER_CALL = 15
@@ -271,6 +272,8 @@ INDEX_HTML = """<!doctype html>
     <div id="feedback-thanks" style="display:none">Thanks — sent.</div>
   </div>
 
+  <button id="switch-student-btn" class="ghost" hidden>Sign out / switch student</button>
+
   <div id="auth-screen" class="panel">
     <label for="passphrase">Access code</label>
     <input type="password" id="passphrase" placeholder="Ask your teacher for the code">
@@ -292,8 +295,15 @@ INDEX_HTML = """<!doctype html>
     <label for="student">Your name</label>
     <input type="text" id="student" placeholder="e.g. Maria">
 
-    <label for="student-code">Your personal code <span class="hint">(optional — lets Juno recognise you on any device)</span></label>
-    <input type="text" id="student-code" placeholder="Leave empty if your teacher hasn't given you one">
+    <label for="student-code">Your personal code <span class="hint">(returning students)</span></label>
+    <input type="password" id="student-code" placeholder="Enter the code your teacher gave you" autocomplete="off">
+    <p class="hint">Sign in with your personal code to recover your history. New student creates a separate history, even on a shared browser. Without a personal code, you cannot return to that history after reloading.</p>
+    <div class="row">
+      <button id="identity-btn" class="ghost">Sign in with personal code</button>
+      <button id="new-student-btn" class="ghost">New student</button>
+
+    </div>
+    <p id="identity-status" class="hint">Select a student before starting a class.</p>
 
     <label for="mode">Mode</label>
     <select id="mode">
@@ -316,7 +326,7 @@ INDEX_HTML = """<!doctype html>
     </div>
 
     <div class="row" style="margin-top:22px">
-      <button id="start-btn" style="flex:1">Start class</button>
+      <button id="start-btn" style="flex:1" disabled>Start class</button>
     </div>
     <div class="error" id="start-error"></div>
     <div class="status" id="setup-status"><span class="dot"></span><span id="setup-status-text"></span></div>
@@ -399,6 +409,9 @@ let cancelListening = () => {};
 let startListening = () => {};
 let autoListenBlocked = false;
 let autoTimer = null;
+// Kept in this page only: reloads and shared browsers must select a student.
+let studentIdentityToken = null;
+const studentChanges = window.BroadcastChannel ? new BroadcastChannel('juno-student-selection') : null;
 
 // Three failures look identical to a student and need different words:
 // the free tier waking up (wait), no connection (check your wifi), and a
@@ -413,13 +426,16 @@ class ApiError extends Error {
 const WAKING_AFTER_MS = 3000;
 
 async function api(path, body, opts) {
+  const identityToken = studentIdentityToken;
+  if (identityToken && ['/api/message', '/api/start', '/api/end', '/api/help'].includes(path)) lastStudentActivity = Date.now();
   const onWaking = (opts || {}).onWaking;
   const timer = onWaking ? setTimeout(onWaking, WAKING_AFTER_MS) : null;
   let res;
   try {
     res = await fetch(path, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json',
+        ...(identityToken ? { 'X-Juno-Identity': identityToken } : {}) },
       body: JSON.stringify(body || {}),
       credentials: 'same-origin',
     });
@@ -440,9 +456,17 @@ async function api(path, body, opts) {
   } catch (e) {
     throw new ApiError('Juno sent something unexpected. Please try again.', 'server');
   }
+  if (identityToken && identityToken !== studentIdentityToken && path !== '/api/identity' && path !== '/api/signout') {
+    throw new ApiError('The selected student changed. Please try again.', 'identity');
+  }
   if (!res.ok) {
+    if (res.status === 401) {
+      resetStudentSelection();
+      $('student').value = '';
+      show('auth-screen');
+    }
     throw new ApiError(data.error || 'Something went wrong.',
-                       res.status === 429 ? 'limit' : 'server');
+                       res.status === 401 && identityToken ? 'identity' : res.status === 429 ? 'limit' : 'server');
   }
   return data;
 }
@@ -906,7 +930,7 @@ $('help-btn').onclick = async () => {
   $('help-card').hidden = false;
   $('help-text').textContent = 'Un momento…';
   try {
-    const data = await api('/api/help', {}, {
+    const data = await api('/api/help', { call_id: currentCallId }, {
       onWaking: () => { $('help-text').textContent = 'Juno se está despertando, un momento…'; },
     });
     fillRich($('help-text'), data.help);
@@ -919,8 +943,8 @@ $('help-btn').onclick = async () => {
 };
 $('help-close').onclick = () => { $('help-card').hidden = true; };
 
-// Try an empty passphrase first - if no access code is configured server-side,
-// this succeeds immediately and the auth screen never has to be shown.
+// Check the existing shared-gate session without guessing a passphrase.
+// Local use without a configured gate succeeds immediately.
 //
 // This is the very first network call the page makes, before the student has
 // touched anything - and on Render's free tier, a service that's been idle
@@ -932,7 +956,7 @@ $('help-close').onclick = () => { $('help-card').hidden = true; };
 // one screen (onWaking usually targets setup-status/chat-status) because at
 // this point the auth screen is still showing, not the setup screen - lede
 // sits outside every screen div, so it's visible no matter which one is up.
-api('/api/auth', { passphrase: '' }, {
+api('/api/gate', {}, {
   onWaking: () => { $('lede').textContent = 'Juno is waking up — this can take up to a minute after a quiet spell…'; },
 }).then(() => {
   $('lede').textContent = 'A live practice call, corrected as you go.';
@@ -942,10 +966,10 @@ api('/api/auth', { passphrase: '' }, {
 });
 
 async function checkForUnfinishedClass() {
+  pendingResume = null;
+  $('resume-notice').style.display = 'none';
   try {
-    const data = await api('/api/resume', {
-      access_code: $('student-code') ? $('student-code').value : null,
-    });
+    const data = await api('/api/resume', {});
     if (!data.open_call) return;
     const call = data.open_call;
     pendingResume = call;
@@ -954,8 +978,7 @@ async function checkForUnfinishedClass() {
       `${call.turns} message${call.turns === 1 ? '' : 's'}, last saved ${when}.`;
     $('resume-notice').style.display = 'block';
   } catch (e) {
-    // Nothing to recover, or we couldn't ask. Either way the student can
-    // just start a new class; this is never worth an error in their face.
+    $('start-error').textContent = e.message;
   }
 }
 
@@ -992,20 +1015,22 @@ $('resume-report-btn').onclick = async () => {
 };
 
 $('resume-discard-btn').onclick = async () => {
-  try { await api('/api/abandon', {}); } catch (e) { /* nothing to undo */ }
+  try { await api('/api/abandon', { call_id: pendingResume && pendingResume.call_id }); }
+  catch (e) { $('start-error').textContent = e.message; return; }
   pendingResume = null;
   classInProgress = false;
   $('resume-notice').style.display = 'none';
 };
 
 function afterAuth() {
-  $('feedback-btn').style.display = 'inline-block';
+  $('passphrase').value = '';
   show('setup-screen');
-  checkForUnfinishedClass();
   fetch('/scenarios.json', { credentials: 'same-origin' }).then((r) => r.json()).then((data) => {
     scenarios = data;
     if (!scenarios.business_packs) throw new Error('scenarios.json is an old version.');
     const sel = $('scenario');
+    sel.textContent = '';
+    sel.appendChild(new Option('Surprise me', ''));
     // Grouped by sector, and each group opens with its own "surprise me" -
     // a flat list of every scenario across every pack is unusable once there
     // are more than a couple of packs, and hides which sector a title is from.
@@ -1027,6 +1052,111 @@ function afterAuth() {
   }).catch((e) => { $('start-error').textContent = 'Could not load scenarios: ' + e.message; });
   setupVoiceInput();
 }
+
+function resetStudentSelection() {
+  stopClass();
+  cancelListening();
+  studentIdentityToken = null;
+  pendingResume = null;
+  currentCallId = null;
+  classInProgress = false;
+  $('start-btn').disabled = true;
+  $('resume-notice').style.display = 'none';
+  $('switch-student-btn').hidden = true;
+  $('feedback-btn').style.display = 'none';
+  $('feedback-panel').style.display = 'none';
+  $('feedback-text').value = '';
+  $('student-code').value = '';
+  $('passphrase').value = '';
+  $('student').readOnly = false;
+  $('identity-status').textContent = 'Select a student before starting a class.';
+  clearChat();
+  $('recap').textContent = '';
+  $('help-text').textContent = '';
+  $('msg-input').value = '';
+  lastSavedAt = null;
+  setStatus('chat-status', '');
+}
+
+if (studentChanges) studentChanges.onmessage = (event) => {
+  if (event.data !== 'student-changed') return;
+  resetStudentSelection();
+  $('student').value = '';
+  $('start-error').textContent = 'The student changed in another tab. Sign in again.';
+  show('setup-screen');
+};
+
+async function selectStudent(newStudent) {
+  const code = $('student-code').value;
+  $('identity-btn').disabled = $('new-student-btn').disabled = true;
+  $('switch-student-btn').disabled = true;
+  $('start-btn').disabled = true;
+  $('start-error').textContent = '';
+  // Never retain the previous student's transcript while selecting another.
+  resetStudentSelection();
+  try {
+    const data = await api('/api/identity', {
+      student: $('student').value,
+      access_code: newStudent ? null : code,
+      new_student: newStudent,
+    });
+    studentIdentityToken = data.identity_token;
+    $('student').value = data.display_name;
+    $('student').readOnly = true;
+    lastStudentActivity = Date.now();
+    $('identity-status').textContent = `Selected student: ${data.display_name}. Switch student before someone else uses this browser.`;
+    if (data.personal_code) $('identity-status').textContent += ` Save your personal code privately to return to this account: ${data.personal_code}`;
+    $('switch-student-btn').hidden = false;
+    $('feedback-btn').style.display = 'inline-block';
+    $('start-btn').disabled = false;
+    if (studentChanges) studentChanges.postMessage('student-changed');
+    await checkForUnfinishedClass();
+  } catch (e) {
+    $('start-error').textContent = e.message;
+  } finally {
+    $('identity-btn').disabled = $('new-student-btn').disabled = false;
+    $('switch-student-btn').disabled = false;
+  }
+}
+
+let lastStudentActivity = Date.now();
+const STUDENT_IDLE_MS = 20 * 60 * 1000;
+for (const eventName of ['pointerdown', 'keydown', 'input']) {
+  document.addEventListener(eventName, () => { lastStudentActivity = Date.now(); }, {passive: true});
+}
+async function checkStudentSession() {
+  if (!studentIdentityToken) return;
+  if (Date.now() - lastStudentActivity >= STUDENT_IDLE_MS) {
+    // Clear the screen even when the network is unavailable.
+    const token = studentIdentityToken;
+    resetStudentSelection();
+    $('student').value = '';
+    show('auth-screen');
+    if (studentChanges) studentChanges.postMessage('student-changed');
+    fetch('/api/signout', {method: 'POST', credentials: 'same-origin',
+      headers: {'content-type': 'application/json', 'X-Juno-Identity': token}, body: '{}'}).catch(() => {});
+    return;
+  }
+  try { await api('/api/session', {}); } catch (e) {
+    if (e.kind !== 'network') $('start-error').textContent = e.message;
+  }
+}
+setInterval(checkStudentSession, 15000);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) checkStudentSession();
+});
+$('identity-btn').onclick = () => selectStudent(false);
+$('new-student-btn').onclick = () => selectStudent(true);
+$('switch-student-btn').onclick = async () => {
+  try { await api('/api/signout', {}); }
+  catch (e) { $('start-error').textContent = e.message; }
+  finally {
+    resetStudentSelection();
+    $('student').value = '';
+    if (studentChanges) studentChanges.postMessage('student-changed');
+    show('auth-screen');
+  }
+};
 
 $('auth-btn').onclick = async () => {
   $('auth-error').textContent = '';
@@ -1054,7 +1184,6 @@ $('start-btn').onclick = async () => {
     const choice = mode === 'business' ? $('scenario').value : '';
     const data = await api('/api/start', {
       student: $('student').value || 'demo',
-      access_code: $('student-code') ? $('student-code').value : null,
       mode,
       level: $('level').value,
       scenario_id: choice.startsWith('pack:') ? null : (choice || null),
@@ -1074,7 +1203,7 @@ $('start-btn').onclick = async () => {
     $('start-error').textContent = e.message;
     setStatus('setup-status', '', e.kind === 'network' ? 'offline' : '');
   } finally {
-    $('start-btn').disabled = false;
+    $('start-btn').disabled = !studentIdentityToken;
   }
 };
 
@@ -1104,7 +1233,7 @@ async function sendMessage() {
   $('chat-error').textContent = '';
   setOrb('thinking', 'Juno is thinking…');
   try {
-    const data = await api('/api/message', { text, idempotency_key: key },
+    const data = await api('/api/message', { text, idempotency_key: key, call_id: currentCallId },
       { onWaking: () => setStatus('chat-status',
           'Juno is waking up — one moment.', 'waking') });
     bubble('juno', data.reply);
@@ -1117,6 +1246,7 @@ async function sendMessage() {
         `${data.turns_left} messages left in this class — press End when you're ready for your report.`;
     }
   } catch (e) {
+    if (e.kind === 'identity') return;  // don't restore the previous student's line
     setJunoLine(before);
     $('chat-error').textContent = e.message;
     setStatus('chat-status',
@@ -1136,17 +1266,19 @@ $('msg-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendM
 
 function renderRecap(r) {
   const el = $('recap');
+  const escape = (value) => String(value ?? '').replace(/[&<>"']/g,
+    (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   const rows = (arr, fn) => arr.map(fn).join('');
   el.innerHTML = `
-    <h3>What we did today</h3><p>${r.what_we_did}</p>
+    <h3>What we did today</h3><p>${escape(r.what_we_did)}</p>
     <h3>Your corrections</h3>
-    <table>${rows(r.corrections, (c) => `<tr><td class="tag">${c.tier}</td><td><b>${c.said}</b> → <b>${c.better}</b><br><span style="color:var(--muted)">${c.note}</span></td></tr>`)}</table>
-    ${r.word_traps.length ? `<h3>Word traps</h3><ul>${rows(r.word_traps, (w) => `<li><b>${w.you_said}</b> (${w.problem}) → <b>${w.we_say}</b></li>`)}</ul>` : ''}
-    ${r.pronunciation.length ? `<h3>Pronunciation</h3><ul>${rows(r.pronunciation, (p) => `<li>${p.word} ${p.ipa} — ${p.watch_for}</li>`)}</ul>` : ''}
-    <h3>Vocabulary</h3><ul>${rows(r.vocabulary_learned, (v) => `<li><b>${v.term}</b> — ${v.meaning}</li>`)}</ul>
-    <h3>What went well</h3><ul>${rows(r.what_went_well, (w) => `<li>${w}</li>`)}</ul>
-    ${r.homework.length ? `<h3>Before next class</h3><ul>${rows(r.homework, (h) => `<li>${h}</li>`)}</ul>` : ''}
-    <h3>Next session focus</h3><p>${r.next_recommendation}</p>
+    <table>${rows(r.corrections, (c) => `<tr><td class="tag">${escape(c.tier)}</td><td><b>${escape(c.said)}</b> → <b>${escape(c.better)}</b><br><span style="color:var(--muted)">${escape(c.note)}</span></td></tr>`)}</table>
+    ${r.word_traps.length ? `<h3>Word traps</h3><ul>${rows(r.word_traps, (w) => `<li><b>${escape(w.you_said)}</b> (${escape(w.problem)}) → <b>${escape(w.we_say)}</b></li>`)}</ul>` : ''}
+    ${r.pronunciation.length ? `<h3>Pronunciation</h3><ul>${rows(r.pronunciation, (p) => `<li>${escape(p.word)} ${escape(p.ipa)} — ${escape(p.watch_for)}</li>`)}</ul>` : ''}
+    <h3>Vocabulary</h3><ul>${rows(r.vocabulary_learned, (v) => `<li><b>${escape(v.term)}</b> — ${escape(v.meaning)}</li>`)}</ul>
+    <h3>What went well</h3><ul>${rows(r.what_went_well, (w) => `<li>${escape(w)}</li>`)}</ul>
+    ${r.homework.length ? `<h3>Before next class</h3><ul>${rows(r.homework, (h) => `<li>${escape(h)}</li>`)}</ul>` : ''}
+    <h3>Next session focus</h3><p>${escape(r.next_recommendation)}</p>
   `;
 }
 
@@ -1227,14 +1359,17 @@ class Handler(BaseHTTPRequestHandler):
         sid = cookies["juno_sid"].value if "juno_sid" in cookies else None
         if not sid or sid not in SESSIONS:
             sid = secrets.token_urlsafe(24)
-            SESSIONS[sid] = {"authed": not ACCESS_PASSPHRASE, "call_count": 0}
+            SESSIONS[sid] = {"authed": not ACCESS_PASSPHRASE, "call_count": 0, "last_activity": time.time()}
             self._set_cookie("juno_sid", sid)
         self._sid = sid
+        session = SESSIONS[sid]
+        if session.get("authed") and time.time() - session.get("last_activity", 0) >= access_security.IDLE_SECONDS:
+            SESSIONS[sid] = {"authed": not ACCESS_PASSPHRASE, "call_count": 0, "last_activity": time.time()}
         return SESSIONS[sid]
 
     def _set_cookie(self, name: str, value: str, max_age: int | None = None) -> None:
         secure = "; Secure" if RUNNING_DEPLOYED else ""
-        age = f"; Max-Age={max_age}" if max_age else ""
+        age = f"; Max-Age={max_age}" if max_age is not None else ""
         self._pending_cookies.append(
             f"{name}={value}; Path=/; HttpOnly; SameSite=Lax{secure}{age}"
         )
@@ -1242,54 +1377,78 @@ class Handler(BaseHTTPRequestHandler):
     def _cookie_headers(self) -> list[str]:
         return getattr(self, "_pending_cookies", [])
 
-    def _student_cookie(self) -> str | None:
-        cookies = getattr(self, "_cookies", None)
-        if cookies and "juno_student" in cookies:
-            return cookies["juno_student"].value
-        return None
+    def _require_student(self, session: dict) -> dict:
+        """A shared passphrase or legacy student-id cookie is not identity.
 
-    def _resolve_student(self, data: dict) -> dict:
-        """Work out which student this request belongs to.
-
-        Identity is no longer the typed name. In order of authority:
-
-        1. An individual access code, if the student has one. This identifies
-           them exactly, on any device — the way out of the shared-passphrase
-           pilot.
-        2. A long-lived `juno_student` cookie holding their internal id. Two
-           students both called Maria, on their own machines, are two records
-           that never touch each other's memory.
-        3. Otherwise a new student is created.
-
-        The typed name only ever sets `display_name`, so a student can correct
-        their own spelling without becoming a different person and losing
-        everything Juno has learned about them.
+        The page token is issued only after a personal code is verified or an
+        explicitly new guest is created. Switching students rotates it; stale
+        tabs cannot silently act on the newly selected student's classes.
         """
-        code = (data.get("access_code") or "").strip()
+        token = self.headers.get("X-Juno-Identity", "")
+        expected = session.get("identity_token", "")
+        if not token or not token.isascii() or not expected or not secrets.compare_digest(token, expected):
+            raise _StudentAccessError("Select a student with a personal code or "
+                                      "choose New student before continuing.", 401)
+        student = store.get_student(session.get("student_id", ""))
+        if not student:
+            raise _StudentAccessError("Your student sign-in has expired. Sign in again.", 401)
+        if student["access_code"] != session.get("credential_hash"):
+            SESSIONS[self._sid] = {"authed": not ACCESS_PASSPHRASE, "call_count": 0, "last_activity": time.time()}
+            raise _StudentAccessError("Your personal code was replaced. Sign in again.", 401)
+        session["last_activity"] = time.time()
+        return student
+
+    def _handle_identity(self, session: dict, data: dict) -> None:
+        code = data.get("access_code")
+        if code is not None and not isinstance(code, str):
+            raise _StudentAccessError("Invalid personal code. Enter the code your teacher gave you.", 400)
+        code = (code or "").strip()
+        typed = data.get("student")
+        if typed is not None and not isinstance(typed, str):
+            raise _StudentAccessError("Enter your name as text.", 400)
+        typed = (typed or "").strip()
         if code:
-            found = store.student_by_access_code(code)
-            if found:
-                student_id = found["student_id"]
-                self._set_cookie("juno_student", student_id, STUDENT_COOKIE_MAX_AGE)
-                typed = (data.get("student") or "").strip()
-                if typed and typed != found["display_name"]:
-                    store.set_display_name(student_id, typed)
-                store.touch_student(student_id)
-                return store.get_student(student_id)
+            student = access_security.check_login("student", self.client_address[0],
+                                                  lambda: store.student_by_access_code(code))
+            if not student:
+                raise _StudentAccessError("Invalid personal code. Check the code "
+                                          "or ask your teacher for help.", 400)
+            student_id = student["student_id"]
+            verified_hash = student["access_code"]
+        elif data.get("new_student") is True and typed:
+            student_id = store.create_student(typed)
+        else:
+            raise _StudentAccessError("Enter your personal code, or enter your name "
+                                      "and explicitly choose New student.", 400)
+        new_code = None
+        if not code:
+            new_code = access_security.provision_code(student_id)
+            verified_hash = access_security.code_hash(new_code)
+        store.touch_student(student_id)
+        student = store.get_student(student_id)
+        if student["access_code"] != verified_hash:
+            raise _StudentAccessError("Your personal code was replaced. Sign in again.", 401)
+        token = secrets.token_urlsafe(32)
+        # Replace rather than mutate: an in-flight request keeps the identity
+        # it was authorized for, never the next user's identity or call pointer.
+        SESSIONS[self._sid] = {**session, "student_id": student_id,
+                              "identity_token": token, "call_id": None,
+                              "credential_hash": verified_hash, "last_activity": time.time()}
+        self._set_cookie("juno_student", "", 0)  # discard the legacy identity cookie
+        self._send_json({"identity_token": token, "display_name": student["display_name"], "personal_code": new_code})
 
-        typed = (data.get("student") or "").strip()
-        cookie_id = self._student_cookie()
-        if cookie_id:
-            known = store.get_student(cookie_id)
-            if known:
-                if typed and typed != known["display_name"]:
-                    store.set_display_name(cookie_id, typed)
-                store.touch_student(cookie_id)
-                return store.get_student(cookie_id)
+    def _handle_signout(self, session: dict) -> None:
+        self._require_student(session)
+        SESSIONS[self._sid] = {"authed": not ACCESS_PASSPHRASE, "call_count": 0, "last_activity": time.time()}
+        self._send_json({"ok": True})
 
-        student_id = store.create_student(typed or "Student")
-        self._set_cookie("juno_student", student_id, STUDENT_COOKIE_MAX_AGE)
-        return store.get_student(student_id)
+    def _owned_call(self, session: dict, call_id: str | None) -> dict | None:
+        student = self._require_student(session)
+        call = store.get_call(call_id) if call_id else None
+        if call_id and (not call or call["student_id"] != student["student_id"]):
+            # Same answer for missing and foreign IDs: don't disclose existence.
+            raise _StudentAccessError("Class not found for the selected student.", 404)
+        return call
 
     def _send_json(self, obj, status: int = 200) -> None:
         body = json.dumps(obj).encode("utf-8")
@@ -1328,9 +1487,28 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0) or 0)
             raw = self.rfile.read(length) if length else b"{}"
             data = json.loads(raw or b"{}")
+            if not isinstance(data, dict):
+                raise _StudentAccessError("The request must contain a JSON object.", 400)
+
+            if self.path != "/api/identity" and data.get("access_code") not in (None, ""):
+                raise _StudentAccessError("Personal codes must be verified with "
+                                          "Sign in with personal code before continuing.", 400)
 
             if self.path == "/api/auth":
                 self._handle_auth(session, data)
+            elif self.path == "/api/gate":
+                self._require_auth(session)
+                self._send_json({"ok": True})
+            elif self.path == "/api/identity":
+                self._require_auth(session)
+                self._handle_identity(session, data)
+            elif self.path == "/api/session":
+                self._require_auth(session)
+                self._require_student(session)
+                self._send_json({"ok": True})
+            elif self.path == "/api/signout":
+                self._require_auth(session)
+                self._handle_signout(session)
             elif self.path == "/api/start":
                 self._require_auth(session)
                 self._handle_start(session, data)
@@ -1354,8 +1532,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._handle_help(session, data)
             else:
                 self._send_json({"error": "not found"}, 404)
+        except access_security.LoginLimited:
+            self._send_json({"error": "Too many failed sign-in attempts. Wait five minutes and try again."}, 429)
         except _AuthError:
             self._send_json({"error": "Not authenticated."}, 401)
+        except _StudentAccessError as e:
+            self._send_json({"error": str(e)}, e.status)
+        except store.ReplayConflict:
+            self._send_json({"error": "This message retry does not belong to this class."}, 409)
         except tutor.UnknownScenario as e:
             # Bad input from the page, not a server fault - usually a stale
             # tab holding scenario ids from an older scenarios.json.
@@ -1381,10 +1565,13 @@ class Handler(BaseHTTPRequestHandler):
     def _handle_auth(self, session: dict, data: dict) -> None:
         if not ACCESS_PASSPHRASE:
             session["authed"] = True
+            session["last_activity"] = time.time()
             self._send_json({"ok": True})
             return
-        if secrets.compare_digest(str(data.get("passphrase") or ""), ACCESS_PASSPHRASE):
+        if access_security.check_login("shared", self.client_address[0],
+                                      lambda: secrets.compare_digest(str(data.get("passphrase") or "").encode(), ACCESS_PASSPHRASE.encode())):
             session["authed"] = True
+            session["last_activity"] = time.time()
             self._send_json({"ok": True})
         else:
             self._send_json({"error": "Wrong passphrase."}, 401)
@@ -1461,7 +1648,11 @@ class Handler(BaseHTTPRequestHandler):
             print(f"[juno] metrics failed (class unaffected): {e}", file=sys.stderr)
 
     def _handle_start(self, session: dict, data: dict) -> None:
-        student = self._resolve_student(data)
+        student = self._require_student(session)
+        typed = (data.get("student") or "").strip()
+        if typed and typed != student["display_name"]:
+            raise _StudentAccessError("The name differs from the selected student. "
+                                      "Sign in with their personal code or choose New student.", 409)
         student_id = student["student_id"]
 
         try:
@@ -1509,25 +1700,27 @@ class Handler(BaseHTTPRequestHandler):
             "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         })
 
-    def _current_call(self, session: dict) -> dict | None:
-        call_id = session.get("call_id")
-        if not call_id:
-            return None
-        call = store.get_call(call_id)
+    def _current_call(self, session: dict, data: dict) -> dict | None:
+        call_id = (data.get("call_id") or "").strip() or session.get("call_id")
+        call = self._owned_call(session, call_id)
         return call if call and call["status"] == "open" else None
 
     def _handle_message(self, session: dict, data: dict) -> None:
+        call_id = (data.get("call_id") or "").strip() or session.get("call_id")
+        call = self._owned_call(session, call_id)
+        if not call:
+            self._send_json({"error": "No class in progress. Start one first."}, 400)
+            return
         # A retry of a request we already answered replays the stored answer
         # instead of asking the model again: no duplicated turn in the
         # transcript, and nothing billed twice.
         key = (data.get("idempotency_key") or "").strip()[:80]
-        replayed = store.replayed_response(key) if key else None
+        replayed = store.replayed_response(key, call["call_id"]) if key else None
         if replayed is not None:
             self._send_json(replayed)
             return
 
-        call = self._current_call(session)
-        if not call:
+        if call["status"] != "open":
             self._send_json({"error": "No class in progress. Start one first."}, 400)
             return
 
@@ -1573,7 +1766,7 @@ class Handler(BaseHTTPRequestHandler):
         Looked up by student rather than by browser session, so it survives a
         closed tab, a different device, and a server restart.
         """
-        student = self._resolve_student(data)
+        student = self._require_student(session)
         call = store.open_call_for(student["student_id"])
         if not call:
             self._send_json({"open_call": None})
@@ -1593,7 +1786,7 @@ class Handler(BaseHTTPRequestHandler):
         # Accept an explicit call_id so a class can be closed and reported on
         # later, from a different tab, without ever having pressed End call.
         call_id = (data.get("call_id") or "").strip() or session.get("call_id")
-        call = store.get_call(call_id) if call_id else None
+        call = self._owned_call(session, call_id)
         if not call:
             self._send_json({"error": "No class to finish."}, 400)
             return
@@ -1624,7 +1817,7 @@ class Handler(BaseHTTPRequestHandler):
         An aside, not a turn: nothing is added to the class transcript, so the
         conversation and the report are unchanged by asking for help.
         """
-        call = self._current_call(session)
+        call = self._current_call(session, data)
         if not call:
             self._send_json({"error": "No class in progress."}, 400)
             return
@@ -1669,20 +1862,21 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({"help": text})
 
     def _handle_abandon(self, session: dict, data: dict) -> None:
-        call = self._current_call(session)
+        call = self._current_call(session, data)
         if call:
             store.abandon_call(call["call_id"])
         session["call_id"] = None
         self._send_json({"ok": True})
 
     def _handle_feedback(self, session: dict, data: dict) -> None:
+        student = self._require_student(session)
         text = (data.get("text") or "").strip()
         if not text:
             self._send_json({"error": "Feedback can't be empty."}, 400)
             return
         entry = {
             "text": text[:MAX_FEEDBACK_LENGTH],
-            "student": (data.get("student") or "").strip() or None,
+            "student": student["display_name"],
             "mode": (data.get("mode") or "").strip() or None,
             "submitted_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -1697,6 +1891,12 @@ class Handler(BaseHTTPRequestHandler):
 
 class _AuthError(Exception):
     pass
+
+
+class _StudentAccessError(Exception):
+    def __init__(self, message: str, status: int):
+        super().__init__(message)
+        self.status = status
 
 
 def main() -> None:

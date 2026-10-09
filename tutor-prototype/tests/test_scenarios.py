@@ -20,17 +20,16 @@ from __future__ import annotations
 
 import json
 import sys
-import threading
 import unittest
 import urllib.error
 import urllib.request
-from http.cookiejar import CookieJar
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import tutor  # noqa: E402
 import web  # noqa: E402
+from helpers import ServerTestCase  # noqa: E402
 
 REQUIRED_FIELDS = (
     "id",
@@ -172,41 +171,19 @@ class PickScenarioTest(unittest.TestCase):
             tutor.pick_scenario(other_id, packs[0]["id"])
 
 
-class StartEndpointScenarioTest(unittest.TestCase):
+class StartEndpointScenarioTest(ServerTestCase, unittest.TestCase):
     """A bad pack from the page must come back as an error, not a dead
     request - and must not take the server down with it."""
 
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.server = web.ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
-        cls.base_url = f"http://127.0.0.1:{cls.server.server_address[1]}"
-        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
-        cls.thread.start()
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls.server.shutdown()
-        cls.server.server_close()
-
     def setUp(self) -> None:
-        self.opener = urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(CookieJar())
-        )
+        self.opener = self.new_browser()
         web.ACCESS_PASSPHRASE = ""
         web.SESSIONS.clear()
+        self.auth()
+        self.identify(student="demo")
 
     def _post(self, path: str, body: dict):
-        req = urllib.request.Request(
-            f"{self.base_url}{path}",
-            data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with self.opener.open(req) as resp:
-                return resp.status, json.loads(resp.read())
-        except urllib.error.HTTPError as e:
-            return e.code, json.loads(e.read())
+        return self.post(path, body)
 
     def test_unknown_pack_returns_400_and_server_survives(self) -> None:
         self._post("/api/auth", {"passphrase": ""})

@@ -196,27 +196,119 @@ silence.
 
 `store.py` holds the server-side state the browser used to be trusted with.
 
-**Identity is not the name.** A student is a random `stu_…` id; the name they
-type is only a label. So two students called Maria never share a memory
-record, and one student retyping her own name keeps hers. Identity is
-resolved from, in order: an individual access code, a year-long cookie, or a
-new record.
+**Student selection is explicit.** The shared passphrase opens the application;
+it does not identify a student. Returning students sign in with their own
+personal code. Invalid codes produce an error and never select a cookie's
+student or create a new record. Names are labels, not credentials, and sign-in
+does not rename an existing student from the typed name.
 
-**Individual codes** are the way off a single shared passphrase. The schema
-and lookup are in place (`students.access_code`, and a field on the setup
-screen); handing them out is a decision, not a code change. Until then the
-shared passphrase means anyone with the code can start a class as a new
-student — fine among people you know, not a real access control.
+**Shared browsers.** New student explicitly creates a separate identity, even
+with the same name. Switch student signs out and clears the visible transcript,
+recap, and feedback draft. The legacy `juno_student` cookie is not trusted.
+Selection issues a random page token tied to the authenticated browser session.
+It is not stored in localStorage or sessionStorage. Reloading requires selection
+again; changing students invalidates older tabs' tokens. Browsers supporting
+BroadcastChannel also clear the other tabs' visible student data and stop the
+old class; without it, server-side token checks still deny stale requests.
+Every student endpoint
+requires that token, and every class action checks ownership before reading,
+writing, generating a report, or replaying a cached message.
 
-**Limits are server-side**, so clearing cookies or switching browser resets
-nothing. Both per-student and a deployment-wide daily spend ceiling.
+**Personal codes are random credentials.** New students receive a code containing
+256 cryptographically random bits once, in the selection screen. They must save
+it privately to return after reload; it is not saved in browser storage. The
+existing `students.access_code` column stores a domain-separated SHA-256 hash,
+never the issued code. Fast hashing is appropriate for these random bearer
+secrets, not human-chosen passwords. Administrator provisioning always generates
+codes; do not insert human-chosen codes with internal store helpers.
+
+**Existing students must be provisioned before a future rollout.** Code-less
+students cannot recover accounts by name or legacy cookie. The local-only
+`admin_codes.py` command attaches a newly generated code to an exact existing
+student ID, without changing lesson rows, usage, reports, or memory files. Old
+plaintext codes are not accepted by the new login; replace them explicitly.
+There is no public code replacement endpoint and no teacher dashboard change.
+
+For a synthetic database only, the command shape is:
+
+```bash
+python3 admin_codes.py --database /tmp/synthetic-juno/juno.db --student-id stu_SYNTHETIC_ID
+# For deliberate revocation and replacement, add --replace.
+```
+
+The command requires an existing Juno database and a private interactive
+terminal, refuses redirected output, and reveals the generated code once. A
+replacement invalidates the old code and prior sessions on their next request;
+already-authorized requests may finish against their original student's data.
+The administrator must independently verify the student ID's owner and deliver
+the code privately. Losing the code requires administrator replacement. No live
+student provisioning has been performed as part of development.
+
+Before any approved production rollout: back up the database and student memory,
+verify the ownership mapping without relying on names alone, provision and
+privately deliver replacement codes, and verify access before allowing classes.
+Provisioning intentionally does not migrate old plaintext credentials automatically
+or merge same-name students. Database backups/WAL files containing old plaintext
+credentials require separate retention and protection decisions.
+
+**Login throttling survives browser resets.** Failed student-code and shared-gate
+attempts are recorded in a security table in the existing SQLite database. Each
+login type permits at most 10 failures per socket source and 100 deployment-wide
+failures in a rolling five-minute window. Success does not erase failures;
+concurrent checks are transactional. HTTP 429 asks the user to wait five minutes.
+Forwarding headers are not trusted, so a reverse proxy or shared school network
+may cause users to share the source limit. A trusted proxy configuration needs
+verification before rollout; accepting arbitrary X-Forwarded-For is unsafe.
+Limits survive process restarts while the database exists, but not disk loss.
+
+**Shared-device sessions expire.** Sign out is available during setup, lessons,
+and reports, clears visible student content and typed credentials, and revokes
+both student identity and the shared gate (when configured). The server expires
+sessions after 20 minutes without authenticated student requests. The page clears
+student content after 20 minutes without interaction or lesson requests, even if
+sign-out cannot reach the server. A session check every 15 seconds detects stale
+or replaced identities, including tabs without BroadcastChannel; returning to a
+visible tab also checks. Background timers may be suspended by the browser.
+Students must sign out before handing a device to another person; an actively
+signed-in screen remains usable until sign-out or expiration. Active speech turns
+count as lesson activity through their existing message requests; recognition and
+microphone algorithms are unchanged.
+
+**Limits are server-side** and follow the selected student across browsers.
+Creating another new student still creates another per-student allowance; the
+shared gate and deployment-wide spending ceiling remain pilot safeguards.
 
 **A class is saved every turn**, not at End call. Closing the tab, losing
 connection, or the server restarting no longer loses the conversation: the
-student is offered it back, and can either continue it or get its report.
+student can sign in with their personal code to continue it or get its report,
+provided the data remains available on the host's filesystem.
 End call still writes the report; it is no longer the only thing that saves.
 A retried or double-tapped send carries an idempotency key, so it replays the
 stored answer instead of duplicating the turn and paying for it twice.
+Retry keys are bound to their original class and cannot overwrite another
+class's cache. Report text is HTML-escaped before rendering.
+
+### Security regression checks
+
+From `tutor-prototype`, after installing `requirements.txt`, run:
+
+```sh
+python3 tests/run_tests.py
+```
+
+Or select the security checks:
+
+```sh
+python3 tests/run_tests.py test_security test_identity test_recovery
+```
+
+The runner replaces API credentials with a synthetic value, puts all data in
+temporary directories, and blocks non-loopback network connections. Server
+fixtures fail any model call that was not explicitly mocked. Node.js executes
+the report-rendering regression. The optional browser security tests require
+Python Playwright and system Chromium (`/usr/bin/chromium`); if unavailable,
+their skips are reported rather than counted as browser validation. No real
+student data or production services are needed.
 
 **Metrics** go to stderr as one JSON line per turn — token counts split by
 cache read and write, cost estimate, internal id. Deliberately no transcript,

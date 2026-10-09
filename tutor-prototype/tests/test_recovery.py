@@ -34,6 +34,10 @@ class RecoveryTest(ServerTestCase, unittest.TestCase):
         web.SESSIONS.clear()
 
     def _start(self, opener=None, **body):
+        browser = opener or self.opener
+        code = body.pop("access_code", None)
+        if code or not getattr(browser, "identity_token", None):
+            self.identify(browser, student=body.get("student", "Synthetic Student"), access_code=code)
         with mock.patch.object(
             web.client.messages, "create", return_value=fake_reply()
         ):
@@ -75,8 +79,9 @@ class RecoveryTest(ServerTestCase, unittest.TestCase):
         web.SESSIONS.clear()
         later = self.new_browser()
         self.auth(later)
+        self.identify(later, access_code="ret-1")
 
-        status, data = self.post("/api/resume", {"access_code": "ret-1"}, later)
+        status, data = self.post("/api/resume", {}, later)
         self.assertEqual(status, 200)
         self.assertIsNotNone(data["open_call"], "the unfinished class was lost")
         self.assertEqual(data["open_call"]["call_id"], started["call_id"])
@@ -94,6 +99,7 @@ class RecoveryTest(ServerTestCase, unittest.TestCase):
         web.SESSIONS.clear()
         later = self.new_browser()
         self.auth(later)
+        self.identify(later, access_code="rep-1")
         with mock.patch.object(
             web.client.messages, "create", return_value=fake_report_response()
         ):
@@ -111,7 +117,7 @@ class RecoveryTest(ServerTestCase, unittest.TestCase):
             web.client.messages, "create", return_value=fake_report_response()
         ):
             self.post("/api/end", {"call_id": started["call_id"]})
-        _, data = self.post("/api/resume", {"access_code": "done-1"})
+        _, data = self.post("/api/resume", {})
         self.assertIsNone(data["open_call"])
 
     def test_asking_to_end_a_finished_class_returns_its_report(self) -> None:
@@ -139,6 +145,7 @@ class IdempotencyTest(ServerTestCase, unittest.TestCase):
         # A flaky connection, or a double-tapped Send: the student sees one
         # answer, the transcript gains one turn, and the model is called once.
         self.auth()
+        self.identify(student="retry")
         with mock.patch.object(
             web.client.messages, "create", return_value=fake_reply()
         ):
@@ -162,6 +169,7 @@ class IdempotencyTest(ServerTestCase, unittest.TestCase):
 
     def test_different_keys_are_different_messages(self) -> None:
         self.auth()
+        self.identify(student="distinct")
         with mock.patch.object(
             web.client.messages, "create", return_value=fake_reply()
         ):
@@ -184,6 +192,7 @@ class CacheFallbackTest(ServerTestCase, unittest.TestCase):
         # Caching is an optimisation. If the API stops accepting the cached
         # request shape, the student must still get their class.
         self.auth()
+        self.identify(student="fb")
         rejection = anthropic.BadRequestError(
             "cache_control not supported",
             response=mock.Mock(status_code=400, headers={}),

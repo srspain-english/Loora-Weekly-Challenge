@@ -10,10 +10,7 @@ so this runs without an ANTHROPIC_API_KEY set.
 from __future__ import annotations
 
 import json
-import shutil
 import sys
-import tempfile
-import threading
 import unittest
 import urllib.error
 import urllib.request
@@ -23,13 +20,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import web  # noqa: E402
+from helpers import ServerTestCase  # noqa: E402
 
 
 def request(url: str, body: dict, opener: urllib.request.OpenerDirector):
     req = urllib.request.Request(
         url,
         data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json",
+                 **({"X-Juno-Identity": opener.identity_token}
+                    if getattr(opener, "identity_token", None) else {})},
         method="POST",
     )
     try:
@@ -39,25 +39,7 @@ def request(url: str, body: dict, opener: urllib.request.OpenerDirector):
         return e.code, json.loads(e.read())
 
 
-class FeedbackEndpointTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.tmp_dir = Path(tempfile.mkdtemp())
-        cls._orig_feedback_path = web.FEEDBACK_PATH
-        web.FEEDBACK_PATH = cls.tmp_dir / "feedback.jsonl"
-
-        cls.server = web.ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
-        cls.base_url = f"http://127.0.0.1:{cls.server.server_address[1]}"
-        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
-        cls.thread.start()
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls.server.shutdown()
-        cls.server.server_close()
-        web.FEEDBACK_PATH = cls._orig_feedback_path
-        shutil.rmtree(cls.tmp_dir, ignore_errors=True)
-
+class FeedbackEndpointTest(ServerTestCase, unittest.TestCase):
     def setUp(self) -> None:
         # Fresh cookie jar per test so each gets its own server-side session.
         self.opener = urllib.request.build_opener(
@@ -71,6 +53,7 @@ class FeedbackEndpointTest(unittest.TestCase):
     def _auth(self) -> None:
         status, _ = request(f"{self.base_url}/api/auth", {"passphrase": ""}, self.opener)
         self.assertEqual(status, 200)
+        self.identify(student="alex")
 
     def test_rejects_empty_feedback(self) -> None:
         self._auth()

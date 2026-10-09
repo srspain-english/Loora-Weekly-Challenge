@@ -37,55 +37,50 @@ class IdentityTest(ServerTestCase, unittest.TestCase):
             return self.post("/api/start", {"mode": "free", **body}, opener)
 
     def test_same_name_on_two_devices_is_two_students(self) -> None:
-        # The headline case. Two people, same first name, their own laptops.
         maria_a, maria_b = self.new_browser(), self.new_browser()
         self.auth(maria_a)
         self.auth(maria_b)
+        self.identify(maria_a, student="Maria")
+        self.identify(maria_b, student="Maria")
+        _, a = self._start(maria_a)
+        _, b = self._start(maria_b)
+        self.assertNotEqual(store.get_call(a["call_id"])["student_id"],
+                            store.get_call(b["call_id"])["student_id"])
 
-        _, a = self._start(maria_a, student="maria")
-        _, b = self._start(maria_b, student="maria")
-
-        call_a = store.get_call(a["call_id"])
-        call_b = store.get_call(b["call_id"])
-        self.assertNotEqual(
-            call_a["student_id"], call_b["student_id"],
-            "two students sharing a first name were merged into one record",
-        )
-
-    def test_a_student_keeps_their_id_when_they_retype_their_name(self) -> None:
-        # Same browser, name spelled differently: same person, same memory.
+    def test_retyping_a_name_does_not_select_or_rename_another_student(self) -> None:
         self.auth()
-        _, first = self._start(self.opener, student="maria")
-        _, second = self._start(self.opener, student="María López")
-
-        id_first = store.get_call(first["call_id"])["student_id"]
-        id_second = store.get_call(second["call_id"])["student_id"]
-        self.assertEqual(id_first, id_second, "renaming created a new student")
-
-    def test_renaming_updates_the_display_name(self) -> None:
-        self.auth()
-        _, first = self._start(self.opener, student="maria")
+        self.identify(student="Maria")
+        _, first = self._start(self.opener, student="Maria")
+        status, _ = self._start(self.opener, student="María López")
+        self.assertEqual(status, 409)
         student_id = store.get_call(first["call_id"])["student_id"]
-        self._start(self.opener, student="María López")
-        self.assertEqual(
-            store.get_student(student_id)["display_name"], "María López"
-        )
+        self.assertEqual(store.get_student(student_id)["display_name"], "Maria")
+
+    def test_a_personal_code_keeps_identity_without_trusting_the_typed_name(self) -> None:
+        student_id = store.create_student("Maria", access_code="synthetic-maria-code")
+        self.auth()
+        self.post("/api/identity", {"access_code": "synthetic-maria-code",
+                                    "student": "Someone else"})
+        _, first = self._start(self.opener)
+        self.assertEqual(store.get_call(first["call_id"])["student_id"], student_id)
+        self.assertEqual(store.get_student(student_id)["display_name"], "Maria")
 
     def test_an_individual_code_identifies_a_student_on_any_device(self) -> None:
-        # The way out of the shared passphrase: a per-student code works from
-        # a browser that has never seen this student before.
-        student_id = store.create_student("Ana", access_code="ana-7Q2")
+        student_id = store.create_student("Ana", access_code="synthetic-ana-code")
         fresh = self.new_browser()
         self.auth(fresh)
-        _, started = self._start(fresh, student="whatever", access_code="ana-7Q2")
+        self.identify(fresh, access_code="synthetic-ana-code")
+        _, started = self._start(fresh)
         self.assertEqual(store.get_call(started["call_id"])["student_id"], student_id)
 
-    def test_an_unknown_code_does_not_borrow_someone_elses_identity(self) -> None:
-        known = store.create_student("Bea", access_code="bea-1")
-        fresh = self.new_browser()
-        self.auth(fresh)
-        _, started = self._start(fresh, student="bea", access_code="not-a-real-code")
-        self.assertNotEqual(store.get_call(started["call_id"])["student_id"], known)
+    def test_an_unknown_code_is_an_error_without_creating_a_student(self) -> None:
+        self.auth()
+        count = store.connect().execute("SELECT COUNT(*) FROM students").fetchone()[0]
+        status, body = self.post("/api/identity", {"access_code": "invalid-synthetic-code",
+                                                "student": "Bea", "new_student": True})
+        self.assertEqual(status, 400)
+        self.assertIn("Invalid personal code", body["error"])
+        self.assertEqual(store.connect().execute("SELECT COUNT(*) FROM students").fetchone()[0], count)
 
     def test_memory_of_two_students_never_crosses(self) -> None:
         a = store.create_student("Same Name")
