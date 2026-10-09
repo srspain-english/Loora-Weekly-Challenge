@@ -409,3 +409,8 @@ recaps, transcripts, and memory, and resume the unfinished class. Browser tests
 use real Chromium through Playwright, block external browser requests, and use
 typed input with speech toggles disabled. Physical devices, other browser
 brands, and HTTPS hosting need separate approved validation.
+
+For the separate mocked HTTPS staging launcher, strict Render configuration,
+persistent storage, consistent backups, and restore rehearsal, see
+[STAGING.md](STAGING.md). Hosting creation and deployment require separate
+approval; preparation alone does not create a service.
