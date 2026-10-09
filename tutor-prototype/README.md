@@ -342,3 +342,70 @@ into this repo. If you want to seed a real student's memory file for a more
 realistic test, do that locally outside version control, or say the word and
 we can add a `.gitignore` entry for a `data/students/private/` folder so real
 student data never gets committed alongside the prototype code.
+
+
+### Phase 3A: local synthetic classroom validation
+
+The dedicated `local_mock.py` launcher runs the normal HTTP handlers and teaching
+functions with a development-only Anthropic stand-in. `web.py` and `tutor.py`
+do not import it and contain no environment switch that enables mocking.
+
+From `tutor-prototype`, with dependencies installed and no inherited Juno or
+Anthropic configuration, run:
+
+```sh
+python3 -B local_mock.py --allow-local-mock
+```
+
+The launcher creates disposable storage, chooses a free loopback port, and prints
+one `JUNO_LOCAL_MOCK_READY` record with the local address and fixture-manifest
+path. The page visibly identifies itself as a local synthetic mock. Read the
+private `.synthetic-fixtures.json` manifest to obtain the synthetic-only shared
+gate and student codes; these are not printed to server logs. Students A and B
+share a display name but have separate identities. A third synthetic student has
+historical open/finished lessons and learning memory; provisioning verifies that
+the history and memory are unchanged.
+
+To keep temporary fixtures across a process restart, explicitly choose an empty
+directory directly under the system temporary directory whose name begins with
+`juno-mock-`, then use the same directory on both launches:
+
+```sh
+python3 -B local_mock.py --allow-local-mock --data-dir /tmp/juno-mock-classroom
+```
+
+These fixtures are exclusively for synthetic testing. An automatically created
+directory is cleaned up on normal exit; explicitly selected temporary storage
+remains until deleted. Do not commit or copy the manifest, database, or memory
+files into the repository. Losing temporary storage still loses its fixtures;
+this does not establish Render storage durability.
+
+The launcher requires the active `juno-v2-development` branch, refuses detached
+or production checkouts, API credential/provider variables, deployment markers
+(including `PORT` and Render variables), and inherited `JUNO_*` settings. It
+refuses nonempty unmarked directories, symlinks, conflicting database paths, or
+storage already held by another mock process. It binds only to `127.0.0.1`,
+blocks outbound socket connections, and supplies no real API credential or SDK
+fallback. Unknown mock request options and tools fail closed. The launcher uses
+POSIX file locking and is intended for the Linux cloud development workspace.
+It is deliberately unsuitable for hosted staging or production.
+
+The mock provides deterministic conversation, help, and structured-report
+responses with zero billable-token usage. It exercises the real lesson, report,
+learning-memory, authentication, ownership, and storage paths; it does not assess
+AI teaching quality, provider compatibility, speech recognition, or microphone
+hardware. Teaching prompts and microphone code remain unchanged.
+
+Run the local process and Chromium journeys, or the complete regression suite:
+
+```sh
+python3 tests/run_tests.py test_local_e2e
+python3 tests/run_tests.py
+```
+
+The process tests stop and restart an actual server against the same temporary
+storage, verify lost browser authentication and retained student identity,
+recaps, transcripts, and memory, and resume the unfinished class. Browser tests
+use real Chromium through Playwright, block external browser requests, and use
+typed input with speech toggles disabled. Physical devices, other browser
+brands, and HTTPS hosting need separate approved validation.
