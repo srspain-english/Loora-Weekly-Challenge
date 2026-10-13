@@ -14,12 +14,11 @@ them silently. SQLite is in the standard library and serialises writes for us.
 Student memory records stay as JSON files (tutor.load_student) — they predate
 this and are left exactly where they are.
 
-A note on durability, since it shapes what this can promise: on Render's free
-tier the disk is not persistent across deploys. This survives process
-restarts, which is the common case (the free tier idles the service out
-between classes), but a redeploy starts from an empty database. Limits and
-recoverable calls are therefore best-effort, not guarantees, until this runs
-somewhere with a real disk or a managed database.
+A note on durability: on Render's free tier the disk is wiped by every deploy.
+Set JUNO_DATABASE_URL to a Postgres address (for example a free Neon project)
+and everything here - students, saved classes, limits, spend, and each
+student's memory - lives there instead, and survives deploys. Without it,
+this is the same local SQLite file as before.
 """
 
 from __future__ import annotations
@@ -73,19 +72,120 @@ PRICE_CACHE_WRITE = 6.25  # 1.25x input, 5-minute TTL
 PRICE_CACHE_READ = 0.50   # 0.1x input
 
 _LOCK = threading.Lock()
-_conn: sqlite3.Connection | None = None
+_conn = None
+
+DATABASE_URL = os.environ.get("JUNO_DATABASE_URL", "").strip()
 
 
-def connect() -> sqlite3.Connection:
+def using_postgres() -> bool:
+    return bool(DATABASE_URL)
+
+
+class _PgRow(dict):
+    """A result row that reads by column name, like sqlite3.Row."""
+
+
+class _PgCursor:
+    def __init__(self, cur):
+        self._cur = cur
+
+    def fetchone(self):
+        row = self._cur.fetchone()
+        return _PgRow(row) if row is not None else None
+
+    def fetchall(self):
+        return [_PgRow(r) for r in self._cur.fetchall()]
+
+
+class _PgConnection:
+    """Gives a Postgres connection the small sqlite3 surface this module uses,
+    so every query below runs unchanged on either database.
+
+    One shared connection, guarded by a lock, as before. A managed database
+    closes idle connections, so a dropped one is reopened once and the
+    statement retried instead of failing in front of a student.
+    """
+
+    def __init__(self, url: str):
+        self._url = url
+        self._lock = threading.RLock()
+        self._pg = None
+        self._open()
+
+    def _open(self):
+        import psycopg
+        from psycopg.rows import dict_row
+        if self._pg is not None:
+            try:
+                self._pg.close()
+            except Exception:  # noqa: BLE001
+                pass
+        # prepare_threshold=None: a pooled connection (Neon's default address)
+        # cannot reuse prepared statements across requests.
+        self._pg = psycopg.connect(self._url, row_factory=dict_row,
+                                   autocommit=False, prepare_threshold=None)
+
+    @staticmethod
+    def _translate(sql: str) -> str:
+        s = sql.replace("?", "%s")
+        if "INSERT OR IGNORE INTO" in s:
+            s = s.replace("INSERT OR IGNORE INTO", "INSERT INTO") + " ON CONFLICT DO NOTHING"
+        if "INSERT OR REPLACE INTO idempotency" in s:
+            s = s.replace("INSERT OR REPLACE INTO", "INSERT INTO") + (
+                " ON CONFLICT (key) DO UPDATE SET call_id = EXCLUDED.call_id,"
+                " response = EXCLUDED.response, created_at = EXCLUDED.created_at")
+        return s
+
+    def execute(self, sql: str, params=()):
+        import psycopg
+        s = self._translate(sql)
+        with self._lock:
+            for attempt in (1, 2):
+                try:
+                    cur = self._pg.cursor()
+                    cur.execute(s, tuple(params))
+                    return _PgCursor(cur)
+                except (psycopg.OperationalError, psycopg.InterfaceError):
+                    if attempt == 2:
+                        raise
+                    self._open()
+                except Exception:
+                    self._pg.rollback()
+                    raise
+
+    def executescript(self, script: str) -> None:
+        with self._lock:
+            script = (script.replace("REAL NOT NULL", "DOUBLE PRECISION NOT NULL")
+                      .replace("INTEGER PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY"))
+            for stmt in script.split(";"):
+                body = "\n".join(l for l in stmt.splitlines() if not l.strip().startswith("--")).strip()
+                if body:
+                    self.execute(body)
+            self._pg.commit()
+
+    def commit(self) -> None:
+        with self._lock:
+            self._pg.commit()
+
+    def close(self) -> None:
+        with self._lock:
+            self._pg.close()
+
+
+def connect():
     global _conn
     with _LOCK:
         if _conn is None:
-            DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-            _conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
-            _conn.row_factory = sqlite3.Row
-            _conn.execute("PRAGMA journal_mode=WAL")
-            _conn.execute("PRAGMA busy_timeout=5000")
-            _init_schema(_conn)
+            if using_postgres():
+                _conn = _PgConnection(DATABASE_URL)
+                _init_schema(_conn)
+            else:
+                DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+                _conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+                _conn.row_factory = sqlite3.Row
+                _conn.execute("PRAGMA journal_mode=WAL")
+                _conn.execute("PRAGMA busy_timeout=5000")
+                _init_schema(_conn)
         return _conn
 
 
@@ -98,9 +198,14 @@ def reset_for_tests(path: Path | None = None) -> None:
             _conn = None
         if path is not None:
             DB_PATH = path
+    if using_postgres():
+        conn = connect()
+        conn.execute("TRUNCATE students, usage_daily, spend_daily, calls,"
+                     " idempotency, student_memory, feedback")
+        conn.commit()
 
 
-def _init_schema(conn: sqlite3.Connection) -> None:
+def _init_schema(conn) -> None:
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS students (
@@ -152,6 +257,20 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             report      TEXT
         );
         CREATE INDEX IF NOT EXISTS calls_student ON calls(student_id, status);
+
+        -- What Juno has learned about each student. Lives here, not in a
+        -- file, so a deploy cannot erase it.
+        CREATE TABLE IF NOT EXISTS student_memory (
+            student_id TEXT PRIMARY KEY,
+            memory     TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS feedback (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            entry        TEXT NOT NULL,
+            submitted_at TEXT NOT NULL
+        );
 
         -- Replayed requests must not append the same turn twice.
         CREATE TABLE IF NOT EXISTS idempotency (
@@ -380,7 +499,7 @@ def record_usage(student_id: str, cost_usd: float, turns: int = 1) -> None:
     )
     conn.execute(
         "INSERT INTO spend_daily (day, cost_usd) VALUES (?, ?)"
-        " ON CONFLICT(day) DO UPDATE SET cost_usd = cost_usd + excluded.cost_usd",
+        " ON CONFLICT(day) DO UPDATE SET cost_usd = spend_daily.cost_usd + excluded.cost_usd",
         (day, cost_usd),
     )
     conn.commit()
@@ -516,4 +635,58 @@ def prune_idempotency(older_than_seconds: int = 86_400) -> None:
         time.time() - older_than_seconds, tz=timezone.utc
     ).isoformat(timespec="seconds")
     conn.execute("DELETE FROM idempotency WHERE created_at < ?", (cutoff,))
+    conn.commit()
+
+
+# --- Student memory and feedback ---------------------------------------
+# With a Postgres database these live in it, so a deploy cannot erase what
+# Juno has learned about a student. tutor.MEMORY_STORE points at this module.
+
+def get_memory(student_id: str) -> dict | None:
+    row = connect().execute(
+        "SELECT memory FROM student_memory WHERE student_id = ?", (student_id,)
+    ).fetchone()
+    return json.loads(row["memory"]) if row else None
+
+
+def put_memory(student_id: str, memory: dict) -> None:
+    conn = connect()
+    if using_postgres():
+        conn.execute(
+            "INSERT INTO student_memory (student_id, memory, updated_at) VALUES (?,?,?)"
+            " ON CONFLICT (student_id) DO UPDATE SET memory = EXCLUDED.memory,"
+            " updated_at = EXCLUDED.updated_at",
+            (student_id, json.dumps(memory), _now()),
+        )
+    else:
+        conn.execute(
+            "INSERT OR REPLACE INTO student_memory (student_id, memory, updated_at)"
+            " VALUES (?,?,?)",
+            (student_id, json.dumps(memory), _now()),
+        )
+    conn.commit()
+
+
+def import_memory_files(students_dir: Path) -> int:
+    """Copy memory files into the database, once each. Files are left alone."""
+    count = 0
+    if not students_dir.exists():
+        return count
+    for path in sorted(students_dir.glob("stu_*.json")):
+        if get_memory(path.stem) is not None:
+            continue
+        try:
+            put_memory(path.stem, json.loads(path.read_text(encoding="utf-8")))
+            count += 1
+        except (OSError, ValueError):
+            continue
+    return count
+
+
+def add_feedback(entry: dict) -> None:
+    conn = connect()
+    conn.execute(
+        "INSERT INTO feedback (entry, submitted_at) VALUES (?,?)",
+        (json.dumps(entry), _now()),
+    )
     conn.commit()

@@ -1788,9 +1788,12 @@ class Handler(BaseHTTPRequestHandler):
             "mode": (data.get("mode") or "").strip() or None,
             "submitted_at": datetime.now(timezone.utc).isoformat(),
         }
-        FEEDBACK_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with FEEDBACK_PATH.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry) + "\n")
+        if store.using_postgres():
+            store.add_feedback(entry)
+        else:
+            FEEDBACK_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with FEEDBACK_PATH.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(entry) + "\n")
         self._send_json({"ok": True})
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002 - stdlib signature
@@ -1815,7 +1818,14 @@ def main() -> None:
     # student ids. The migration copies rather than moves, so the old files
     # stay untouched, and it is safe to run on every boot.
     store.connect()
+    if store.using_postgres():
+        tutor.MEMORY_STORE = store
+        print("Juno is saving everything to the Postgres database.")
     migrated = store.migrate_legacy_students(tutor.STUDENTS_DIR)
+    if store.using_postgres():
+        imported = store.import_memory_files(tutor.STUDENTS_DIR)
+        if imported:
+            print(f"Copied {imported} student memory file(s) into the database.")
     for entry in migrated:
         print(f"Migrated student memory '{entry['legacy_id']}' "
               f"-> {entry['student_id']} ({entry['display_name']})")

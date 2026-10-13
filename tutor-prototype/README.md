@@ -110,6 +110,7 @@ All have working defaults; set them only to tighten something.
 | `JUNO_MAX_MESSAGE_CHARS` | 4000 | Longest single message accepted. |
 | `JUNO_DAILY_COST_CEILING_USD` | 5.00 | **Emergency brake.** Once the whole deployment has spent this in a day, no new classes start for anyone. |
 | `JUNO_SESSION_COST_WARN_USD` | 1.00 | Logs a warning past this much in one session. |
+| `JUNO_DATABASE_URL` | unset | A Postgres address (for example a free Neon project). When set, **everything lives there** - students, saved classes, limits, spend, each student's memory and feedback - and survives deploys, with no paid Render disk. Unset, Juno uses local files as before. |
 | `JUNO_DATA_DIR` | `data` | Folder for everything Juno keeps: the database, each student's memory (`students/`), and feedback. Set it to a persistent disk's mount path when deployed. |
 | `JUNO_DB_PATH` | `<JUNO_DATA_DIR>/juno.db` | Overrides just the database location. Normally leave unset. |
 
@@ -124,6 +125,8 @@ migration prints a line naming the old and new ids.
 Nothing to run by hand; nothing to undo.
 
 ### What survives a restart, and what doesn't
+
+**Short version:** set `JUNO_DATABASE_URL` (a free Neon database works) and nothing is lost on deploys. The rest of this section describes running without it.
 
 Server state — identities, limits, saved classes, spend — lives in SQLite at
 `data/juno.db`, so it survives the process being restarted, which is what

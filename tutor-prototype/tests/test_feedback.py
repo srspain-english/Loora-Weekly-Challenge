@@ -22,6 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import store  # noqa: E402
 import web  # noqa: E402
 
 
@@ -43,6 +44,9 @@ class FeedbackEndpointTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.tmp_dir = Path(tempfile.mkdtemp())
+        # These tests are about the file; the database path has its own tests.
+        cls._orig_pg = store.using_postgres
+        store.using_postgres = lambda: False
         cls._orig_feedback_path = web.FEEDBACK_PATH
         web.FEEDBACK_PATH = cls.tmp_dir / "feedback.jsonl"
 
@@ -56,6 +60,7 @@ class FeedbackEndpointTest(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
         web.FEEDBACK_PATH = cls._orig_feedback_path
+        store.using_postgres = cls._orig_pg
         shutil.rmtree(cls.tmp_dir, ignore_errors=True)
 
     def setUp(self) -> None:

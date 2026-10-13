@@ -459,7 +459,16 @@ REPORT_TOOL = {
 }
 
 
+# Set by web.py when a database is configured: student memory then lives
+# there, so a deploy cannot erase it. None means the JSON files below.
+MEMORY_STORE = None
+
+
 def load_student(student_id: str) -> dict:
+    if MEMORY_STORE is not None:
+        saved = MEMORY_STORE.get_memory(student_id)
+        if saved is not None:
+            return saved
     path = STUDENTS_DIR / f"{student_id}.json"
     if path.exists():
         return json.loads(path.read_text())
@@ -479,6 +488,9 @@ def load_student(student_id: str) -> dict:
 
 
 def save_student(student: dict) -> None:
+    if MEMORY_STORE is not None:
+        MEMORY_STORE.put_memory(student["student_id"], student)
+        return
     STUDENTS_DIR.mkdir(parents=True, exist_ok=True)
     path = STUDENTS_DIR / f"{student['student_id']}.json"
     path.write_text(json.dumps(student, indent=2))
