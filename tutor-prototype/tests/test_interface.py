@@ -86,6 +86,13 @@ class PageTest(ServerTestCase, unittest.TestCase):
         self.assertIn("const SILENCE_MS = 4000;", self.html)
         self.assertIn("tap when you’re done", self.html)
 
+    def test_session_notes_follow_the_juno2_design(self) -> None:
+        self.assertIn("Session notes", self.html)
+        self.assertIn("Task for your next conversation", self.html)
+        self.assertIn("Better expressions", self.html)
+        # The report is built from text nodes, never pasted in as HTML.
+        self.assertNotIn("el.innerHTML = `", self.html)
+
     def test_says_when_it_is_the_students_turn(self) -> None:
         self.assertIn("Your turn — tap to talk", self.html)
 

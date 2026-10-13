@@ -115,6 +115,7 @@ INDEX_HTML = """<!doctype html>
   #feedback-btn{margin-left:auto;padding:7px 14px;font-size:12px;letter-spacing:.04em;text-transform:none}
   .lede{font-family:'Instrument Serif',Georgia,serif;color:var(--ink);font-size:30px;line-height:1.2;margin:26px 0 24px}
   body.in-call .topbar, body.in-call .lede{display:none}
+  body.in-notes .lede{display:none}
   body.in-call .app{height:100vh;height:100dvh;min-height:0;overflow:hidden}
 
   .panel{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px}
@@ -239,12 +240,31 @@ INDEX_HTML = """<!doctype html>
   .link{background:none;border:none;border-radius:0;padding:4px 0;color:var(--ink-soft);font-family:inherit;font-weight:500;font-size:13px;text-decoration:underline;text-underline-offset:3px}
 
   /* Report */
-  .recap-title{font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:30px;margin:0 0 6px}
-  .recap h3{font-size:14px;margin:22px 0 8px}
-  .recap p{margin:0;line-height:1.55}
-  .recap table{width:100%;border-collapse:collapse;font-size:14px}
-  .recap td{padding:8px 4px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.5}
-  .recap ul{margin:4px 0;padding-left:20px;font-size:14px;line-height:1.55}
+  /* Session notes */
+  #report-screen{background:none;border:none;padding:4px 0 0}
+  .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+  .notes-title{font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:40px;line-height:1.02;color:var(--ink);margin:0}
+  .notes-title i{color:var(--accent-hi)}
+  .notes-summary{margin:14px 0 0;color:var(--ink-soft);line-height:1.55}
+  .notes-label{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:30px 0 10px}
+  .note-card{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:16px 18px;margin-bottom:10px}
+  .note-card .said{margin:0;color:var(--muted);text-decoration:line-through;line-height:1.5}
+  .note-card .better{margin:4px 0 0;color:var(--ink);font-weight:600;line-height:1.5}
+  .note-card .why{margin:10px 0 0;font-size:13.5px;color:var(--ink-soft);line-height:1.5}
+  .note-list{background:var(--surface-2);border-radius:20px;padding:2px 18px}
+  .note-list > div{padding:14px 0;border-bottom:1px solid var(--line)}
+  .note-list > div:last-child{border-bottom:none}
+  .note-list strong{display:block;color:var(--ink);font-weight:600}
+  .note-list span{display:block;margin-top:3px;font-size:13.5px;color:var(--ink-soft);line-height:1.5}
+  .pron{display:flex;align-items:center;gap:14px}
+  .play-btn{width:46px;height:46px;flex-shrink:0;border-radius:50%;padding:0;background:var(--surface-2);color:var(--ink);font-size:15px;border:1px solid var(--line)}
+  .pron strong{display:block;color:var(--ink)}
+  .pron span{display:block;margin-top:3px;font-size:13.5px;color:var(--ink-soft);line-height:1.5}
+  .task-card{background:#F4EEE4;color:#121722;border-radius:22px;padding:20px;margin-top:30px}
+  .task-card .eyebrow{color:#5B6170}
+  .task-card h2{font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:26px;line-height:1.2;color:#121722;margin:6px 0 0}
+  .task-card ul{margin:12px 0 0;padding-left:20px;line-height:1.55;font-size:14.5px}
+  .task-card button{width:100%;margin-top:18px}
   .tag{font-size:10px;text-transform:uppercase;color:var(--muted);font-family:ui-monospace,monospace}
 
   @media (prefers-reduced-motion:reduce){
@@ -378,11 +398,13 @@ INDEX_HTML = """<!doctype html>
     </div>
   </div>
 
-  <div id="report-screen" class="panel">
-    <h2 class="recap-title">Class recap</h2>
-    <div id="recap" class="recap"></div>
-    <div class="row" style="margin-top:24px">
-      <button id="again-btn">New class</button>
+  <div id="report-screen">
+    <div id="recap"></div>
+    <div class="task-card">
+      <p class="eyebrow">Task for your next conversation</p>
+      <h2 id="next-task"></h2>
+      <ul id="homework"></ul>
+      <button id="again-btn">Start a new class</button>
     </div>
   </div>
 </div>
@@ -471,6 +493,7 @@ function show(id) {
     $(s).style.display = s !== id ? 'none' : (s === 'chat-screen' ? 'flex' : 'block');
   });
   document.body.classList.toggle('in-call', id === 'chat-screen');
+  document.body.classList.toggle('in-notes', id === 'report-screen');
 }
 
 // --- The class screen ------------------------------------------------------
@@ -1134,20 +1157,98 @@ async function sendMessage() {
 $('send-btn').onclick = sendMessage;
 $('msg-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
 
-function renderRecap(r) {
+function make(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined && text !== null) node.textContent = text;
+  return node;
+}
+
+function describeLength(seconds) {
+  const m = Math.floor(seconds / 60), s = seconds % 60;
+  const mins = m === 1 ? '1 minute' : `${m} minutes`;
+  if (!m) return `${s} seconds`;
+  return s ? `${mins} ${s} seconds` : mins;
+}
+
+// Session notes, laid out like the Juno 2.0 design. Everything the model wrote
+// goes in as text, so nothing in a report can ever run as page code.
+function renderRecap(r, seconds) {
   const el = $('recap');
-  const rows = (arr, fn) => arr.map(fn).join('');
-  el.innerHTML = `
-    <h3>What we did today</h3><p>${r.what_we_did}</p>
-    <h3>Your corrections</h3>
-    <table>${rows(r.corrections, (c) => `<tr><td class="tag">${c.tier}</td><td><b>${c.said}</b> → <b>${c.better}</b><br><span style="color:var(--muted)">${c.note}</span></td></tr>`)}</table>
-    ${r.word_traps.length ? `<h3>Word traps</h3><ul>${rows(r.word_traps, (w) => `<li><b>${w.you_said}</b> (${w.problem}) → <b>${w.we_say}</b></li>`)}</ul>` : ''}
-    ${r.pronunciation.length ? `<h3>Pronunciation</h3><ul>${rows(r.pronunciation, (p) => `<li>${p.word} ${p.ipa} — ${p.watch_for}</li>`)}</ul>` : ''}
-    <h3>Vocabulary</h3><ul>${rows(r.vocabulary_learned, (v) => `<li><b>${v.term}</b> — ${v.meaning}</li>`)}</ul>
-    <h3>What went well</h3><ul>${rows(r.what_went_well, (w) => `<li>${w}</li>`)}</ul>
-    ${r.homework.length ? `<h3>Before next class</h3><ul>${rows(r.homework, (h) => `<li>${h}</li>`)}</ul>` : ''}
-    <h3>Next session focus</h3><p>${r.next_recommendation}</p>
-  `;
+  el.innerHTML = '';
+  el.append(make('p', 'eyebrow', 'Session notes'));
+  const title = make('h1', 'notes-title');
+  if (seconds) {
+    title.append('Your class lasted', document.createElement('br'), make('i', '', describeLength(seconds)));
+  } else {
+    title.textContent = 'Your class recap';
+  }
+  el.append(title);
+  if (r.what_we_did) el.append(make('p', 'notes-summary', r.what_we_did));
+
+  const section = (label) => el.append(make('p', 'notes-label', label));
+
+  if (r.corrections.length) {
+    section(r.corrections.length === 1 ? 'Your correction' : `Your ${r.corrections.length} corrections`);
+    r.corrections.forEach((c) => {
+      const card = make('div', 'note-card');
+      card.append(make('p', 'said', c.said), make('p', 'better', c.better));
+      if (c.note) card.append(make('p', 'why', c.note));
+      el.append(card);
+    });
+  }
+
+  const expressions = [
+    ...r.word_traps.map((w) => [w.we_say, `Instead of “${w.you_said}”. ${w.problem}`]),
+    ...r.vocabulary_learned.map((v) => [v.term, v.meaning]),
+  ];
+  if (expressions.length) {
+    section('Better expressions');
+    const list = make('div', 'note-list');
+    expressions.forEach(([term, why]) => {
+      const row = make('div');
+      row.append(make('strong', '', term), make('span', '', why));
+      list.append(row);
+    });
+    el.append(list);
+  }
+
+  if (r.pronunciation.length) {
+    section(r.pronunciation.length === 1 ? 'Pronunciation target' : 'Pronunciation targets');
+    r.pronunciation.forEach((p) => {
+      const card = make('div', 'note-card pron');
+      const play = make('button', 'play-btn', '▶');
+      play.setAttribute('aria-label', `Hear “${p.word}”`);
+      play.onclick = () => {
+        if (!window.speechSynthesis) return;
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(speakable(p.word));
+        u.lang = 'en-US';
+        u.rate = 0.85;
+        const voice = pickVoice(cachedVoices.length ? cachedVoices : window.speechSynthesis.getVoices());
+        if (voice) u.voice = voice;
+        window.speechSynthesis.speak(u);
+      };
+      const text = make('div');
+      text.append(make('strong', '', `${p.word}  ${p.ipa || ''}`.trim()), make('span', '', p.watch_for));
+      card.append(play, text);
+      el.append(card);
+    });
+  }
+
+  if (r.what_went_well.length) {
+    section('What went well');
+    const list = make('div', 'note-list');
+    r.what_went_well.forEach((w) => list.append(make('div', '', w)));
+    el.append(list);
+  }
+
+  $('next-task').textContent = r.next_recommendation || 'Keep talking: one more class this week.';
+  const homework = $('homework');
+  homework.innerHTML = '';
+  (r.homework || []).forEach((h) => homework.append(make('li', '', h)));
+  homework.hidden = !(r.homework || []).length;
+  window.scrollTo(0, 0);
 }
 
 $('end-btn').onclick = async () => {
@@ -1162,9 +1263,10 @@ $('end-btn').onclick = async () => {
   setStatus('chat-status', 'Writing your report — this takes a few seconds…', 'waking');
   try {
     const data = await api('/api/end', { call_id: currentCallId });
+    const seconds = Math.max(0, Math.floor(((pausedAt || Date.now()) - clockStart - clockPausedTotal) / 1000));
     classInProgress = false;
     stopClass();
-    renderRecap(data.report);
+    renderRecap(data.report, seconds);
     setStatus('chat-status', '');
     show('report-screen');
   } catch (e) {
