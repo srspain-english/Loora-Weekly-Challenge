@@ -167,9 +167,11 @@ SESSION_ARC = textwrap.dedent("""\
     This is a text chat standing in for a 15-minute voice call, so pace yourself by
     conversational turn rather than the clock:
 
-    - Turn 1: greet the student by name, pull one concrete thread from their memory
-      record below (a fact, a struggle, or a word they learned last time). Never open cold.
-      State the mode for this call in one plain sentence.
+    - Turn 1: greet the student by name and open by saying what you worked on or
+      planned last time, taken from their memory record below ("Last time we worked
+      on ...", or their next_recommendation). If the record shows no earlier class,
+      pull one concrete thread from it instead (a fact, a struggle, or a word). Never
+      open cold. State the mode for this call in one plain sentence.
     - Turn 2: one low-stakes warm-up question. Correction suppressed to Tier 3 only —
       this turn is for calibrating their level by ear, not teaching.
     - Middle turns: the actual mode content (scenario role-play, or free conversation),

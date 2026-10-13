@@ -110,6 +110,7 @@ All have working defaults; set them only to tighten something.
 | `JUNO_MAX_MESSAGE_CHARS` | 4000 | Longest single message accepted. |
 | `JUNO_DAILY_COST_CEILING_USD` | 5.00 | **Emergency brake.** Once the whole deployment has spent this in a day, no new classes start for anyone. |
 | `JUNO_SESSION_COST_WARN_USD` | 1.00 | Logs a warning past this much in one session. |
+| `JUNO_ADMIN_CODE` | unset | Switches on the private teacher page at `/admin`, behind this code: create a personal code for a new student, or give one to an existing student, and see who has one. A student types their code in the setup screen and keeps their history on any device. Unset, the page does not exist. |
 | `JUNO_DATABASE_URL` | unset | A Postgres address (for example a free Neon project). When set, **everything lives there** - students, saved classes, limits, spend, each student's memory and feedback - and survives deploys, with no paid Render disk. Unset, Juno uses local files as before. |
 | `JUNO_DATA_DIR` | `data` | Folder for everything Juno keeps: the database, each student's memory (`students/`), and feedback. Set it to a persistent disk's mount path when deployed. |
 | `JUNO_DB_PATH` | `<JUNO_DATA_DIR>/juno.db` | Overrides just the database location. Normally leave unset. |

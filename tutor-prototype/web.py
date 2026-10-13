@@ -34,6 +34,7 @@ import os
 import secrets
 import sys
 import threading
+import time
 import traceback
 import webbrowser
 from datetime import datetime, timezone
@@ -49,6 +50,8 @@ HOST = "0.0.0.0" if RUNNING_DEPLOYED else "127.0.0.1"
 PORT = int(os.environ.get("PORT", 8765))
 ACCESS_PASSPHRASE = os.environ.get("JUNO_ACCESS_PASSPHRASE", "")
 MAX_FEEDBACK_LENGTH = 2000
+# The teacher's private page for personal codes. Switched off unless set.
+ADMIN_CODE = os.environ.get("JUNO_ADMIN_CODE", "")
 FEEDBACK_PATH = tutor.DATA_DIR / "feedback.jsonl"
 # A year: the point of this cookie is that a student stays the same person
 # between classes without having to be given a code first.
@@ -306,6 +309,12 @@ INDEX_HTML = """<!doctype html>
       <button class="ghost" id="resume-report-btn">Just get my report</button>
       <button class="ghost" id="resume-discard-btn">Discard</button>
     </div>
+  </div>
+
+  <div id="last-time" class="notice" hidden>
+    <h2>Last time</h2>
+    <p id="last-time-text"></p>
+    <p id="last-time-next" style="margin-top:6px"></p>
   </div>
 
   <div id="setup-screen" class="panel">
@@ -969,7 +978,14 @@ async function checkForUnfinishedClass() {
     const data = await api('/api/resume', {
       access_code: $('student-code') ? $('student-code').value : null,
     });
-    if (!data.open_call) return;
+    const last = data.last_session;
+    $('last-time').hidden = !(last && (last.what_we_did || last.next_recommendation));
+    if (last) {
+      $('last-time-text').textContent = last.what_we_did || '';
+      $('last-time-next').textContent = last.next_recommendation
+        ? 'Next focus: ' + last.next_recommendation : '';
+    }
+    if (!data.open_call) { $('resume-notice').style.display = 'none'; pendingResume = null; return; }
     const call = data.open_call;
     pendingResume = call;
     const when = new Date(call.updated_at).toLocaleString();
@@ -1022,6 +1038,7 @@ $('resume-discard-btn').onclick = async () => {
 };
 
 function afterAuth() {
+  $('lede').textContent = 'A live practice call, corrected as you go.';
   $('feedback-btn').style.display = 'inline-block';
   show('setup-screen');
   checkForUnfinishedClass();
@@ -1050,6 +1067,8 @@ function afterAuth() {
   }).catch((e) => { $('start-error').textContent = 'Could not load scenarios: ' + e.message; });
   setupVoiceInput();
 }
+
+$('student-code').addEventListener('change', checkForUnfinishedClass);
 
 $('auth-btn').onclick = async () => {
   $('auth-error').textContent = '';
@@ -1316,6 +1335,99 @@ $('feedback-submit').onclick = async () => {
 </html>
 """
 
+
+ADMIN_HTML = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Juno teacher page</title>
+<style>
+  body{margin:0;background:#0E131D;color:#C9CCD3;font-family:system-ui,sans-serif;font-size:15px}
+  .wrap{max-width:760px;margin:0 auto;padding:24px 18px 60px}
+  h1{color:#F4EEE4;font-weight:600;font-size:26px;margin:0 0 6px}
+  p.sub{color:#8A92A2;margin:0 0 22px}
+  .panel{background:#171E2B;border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:18px;margin-bottom:16px;overflow-x:auto}
+  input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:#1F2737;color:#F4EEE4;font-size:16px;box-sizing:border-box}
+  button{border:none;border-radius:999px;padding:11px 18px;background:#FF4A1C;color:#fff;font-weight:600;font-size:14px;cursor:pointer}
+  button.ghost{background:transparent;border:1px solid rgba(255,255,255,.18);color:#C9CCD3}
+  .row{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  td,th{text-align:left;padding:9px 6px;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:middle}
+  th{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#8A92A2;font-weight:500}
+  code{background:#1F2737;padding:3px 8px;border-radius:8px;color:#FF8A5C;font-size:14px;white-space:nowrap}
+  td button{padding:8px 12px;font-size:13px;white-space:nowrap}
+  .err{color:#FF7A6B;margin-top:10px}.ok{color:#5FD0A0;margin-top:10px}
+  .muted{color:#8A92A2}
+</style></head><body><div class="wrap">
+<h1>Juno teacher page</h1>
+<p class="sub">Personal codes let a student keep their history on any phone or computer.</p>
+<div class="panel" id="login">
+  <input type="password" id="code" placeholder="Teacher code" autocomplete="current-password">
+  <div class="row"><button id="open">Open</button></div>
+  <div class="err" id="login-err"></div>
+</div>
+<div id="main" hidden>
+  <div class="panel">
+    <strong style="color:#F4EEE4">New student</strong>
+    <div class="row"><input id="new-name" placeholder="Student's first name" style="flex:1"><button id="create">Create code</button></div>
+    <div id="created"></div>
+  </div>
+  <div class="panel"><table id="list"></table></div>
+</div>
+<script>
+const $ = (i) => document.getElementById(i);
+let adminCode = '';
+async function call(body) {
+  const res = await fetch('/api/admin', {method: 'POST', headers: {'content-type': 'application/json'},
+    body: JSON.stringify(Object.assign({admin_code: adminCode}, body))});
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+  return data;
+}
+function cell(tag, text) { const c = document.createElement(tag); c.textContent = text; return c; }
+async function refresh() {
+  const data = await call({action: 'list'});
+  const t = $('list'); t.innerHTML = '';
+  const head = document.createElement('tr');
+  ['Student', 'Code', 'Classes'].forEach((h) => head.append(cell('th', h)));
+  t.append(head);
+  data.students.forEach((s) => {
+    const tr = document.createElement('tr');
+    tr.append(cell('td', s.display_name));
+    const codeTd = document.createElement('td');
+    if (s.access_code) {
+      codeTd.append(cell('code', s.access_code));
+    } else {
+      const b = cell('button', 'Give a code'); b.className = 'ghost';
+      b.onclick = async () => { b.disabled = true; try { await call({action: 'assign', student_id: s.student_id}); await refresh(); } catch (e) { alert(e.message); b.disabled = false; } };
+      codeTd.append(b);
+    }
+    tr.append(codeTd, cell('td', String(s.classes)));
+    t.append(tr);
+  });
+}
+$('open').onclick = async () => {
+  adminCode = $('code').value;
+  $('login-err').textContent = '';
+  try { await refresh(); $('login').hidden = true; $('main').hidden = false; }
+  catch (e) { $('login-err').textContent = e.message; }
+};
+$('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('open').click(); });
+$('create').onclick = async () => {
+  const name = $('new-name').value.trim();
+  if (!name) return;
+  try {
+    const data = await call({action: 'create', name});
+    const box = $('created'); box.innerHTML = '';
+    const p = cell('div', name + ': '); p.className = 'ok'; p.append(cell('code', data.access_code));
+    box.append(p);
+    $('new-name').value = '';
+    await refresh();
+  } catch (e) { const d = cell('div', e.message); d.className = 'err'; $('created').replaceChildren(d); }
+};
+</script></div></body></html>
+"""
+
 client = anthropic.Anthropic()
 
 
@@ -1418,6 +1530,8 @@ class Handler(BaseHTTPRequestHandler):
         self._load_session()
         if self.path in ("/", "/index.html"):
             self._send_bytes(INDEX_HTML.encode("utf-8"), "text/html; charset=utf-8")
+        elif self.path == "/admin" and ADMIN_CODE:
+            self._send_bytes(ADMIN_HTML.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path == "/scenarios.json":
             self._send_bytes(tutor.SCENARIOS_PATH.read_bytes(), "application/json")
         else:
@@ -1451,6 +1565,8 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/feedback":
                 self._require_auth(session)
                 self._handle_feedback(session, data)
+            elif self.path == "/api/admin":
+                self._handle_admin(data)
             elif self.path == "/api/help":
                 self._require_auth(session)
                 self._handle_help(session, data)
@@ -1572,6 +1688,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"error": str(e)}, 429)
             return
 
+        self._close_unfinished_classes(student_id)
         memory = tutor.load_student(student_id)
         memory["display_name"] = student["display_name"]
         mode = data.get("mode") if data.get("mode") in ("business", "structured") else "free"
@@ -1676,12 +1793,18 @@ class Handler(BaseHTTPRequestHandler):
         closed tab, a different device, and a server restart.
         """
         student = self._resolve_student(data)
+        last = None
+        history = tutor.load_student(student["student_id"]).get("session_history") or []
+        if history:
+            last = {"date": history[-1].get("date"),
+                    "what_we_did": history[-1].get("what_we_did"),
+                    "next_recommendation": history[-1].get("next_recommendation")}
         call = store.open_call_for(student["student_id"])
         if not call:
-            self._send_json({"open_call": None})
+            self._send_json({"open_call": None, "last_session": last})
             return
         session["call_id"] = call["call_id"]
-        self._send_json({"open_call": {
+        self._send_json({"last_session": last, "open_call": {
             "call_id": call["call_id"],
             "mode": call["mode"],
             "level": call["level"],
@@ -1719,6 +1842,62 @@ class Handler(BaseHTTPRequestHandler):
         store.finish_call(call["call_id"], report)
         session["call_id"] = None
         self._send_json({"report": report})
+
+    def _handle_admin(self, data: dict) -> None:
+        """Personal codes: list students, create one, or give one to an existing
+        student. Behind its own code, and absent entirely unless one is set."""
+        if not ADMIN_CODE:
+            self._send_json({"error": "not found"}, 404)
+            return
+        if not secrets.compare_digest(str(data.get("admin_code") or ""), ADMIN_CODE):
+            time.sleep(0.5)  # slows down guessing
+            self._send_json({"error": "Wrong teacher code."}, 401)
+            return
+        action = data.get("action")
+        if action == "list":
+            self._send_json({"students": store.list_students()})
+        elif action == "create":
+            name = (data.get("name") or "").strip()
+            if not name:
+                self._send_json({"error": "Type the student's name first."}, 400)
+                return
+            code = store.make_access_code(name)
+            store.create_student(name, access_code=code)
+            self._send_json({"access_code": code})
+        elif action == "assign":
+            student = store.get_student(str(data.get("student_id") or ""))
+            if not student:
+                self._send_json({"error": "No such student."}, 404)
+                return
+            code = store.set_access_code(student["student_id"],
+                                         store.make_access_code(student["display_name"]))
+            self._send_json({"access_code": code})
+        else:
+            self._send_json({"error": "Unknown action."}, 400)
+
+    def _close_unfinished_classes(self, student_id: str) -> None:
+        """Fold a student's abandoned classes into their memory.
+
+        A student who closes the tab and later starts a new class never
+        pressed End, so what that class taught Juno about them was lost. Do it
+        for them now, before the new class reads their memory. A failure here
+        must never stop the new class from starting.
+        """
+        try:
+            for call in store.open_calls_for(student_id):
+                if call["turns"] < 2:
+                    store.abandon_call(call["call_id"])
+                    continue
+                report = tutor.generate_report(client, call["transcript"])
+                memory = tutor.load_student(student_id)
+                memory = tutor.apply_report_to_student(
+                    memory, report, call["mode"],
+                    {"id": call["scenario_id"]} if call["scenario_id"] else None)
+                tutor.save_student(memory)
+                store.finish_call(call["call_id"], report)
+        except Exception as e:  # noqa: BLE001
+            print(f"[juno] could not close an old class (new class unaffected): {e!r}",
+                  file=sys.stderr, flush=True)
 
     def _handle_help(self, session: dict, data: dict) -> None:
         """Explain, in Spanish, what Juno just asked and how to answer it.
@@ -1805,6 +1984,7 @@ class _AuthError(Exception):
 
 
 def main() -> None:
+    sys.stdout.reconfigure(line_buffering=True)
     if not os.environ.get("ANTHROPIC_API_KEY"):
         sys.exit("Set ANTHROPIC_API_KEY first, same as with tutor.py.")
     if RUNNING_DEPLOYED and not ACCESS_PASSPHRASE:

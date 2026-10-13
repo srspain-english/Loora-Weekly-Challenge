@@ -393,7 +393,7 @@ def student_by_access_code(code: str) -> dict | None:
     if not code:
         return None
     row = connect().execute(
-        "SELECT * FROM students WHERE access_code = ?", (code.strip(),)
+        "SELECT * FROM students WHERE UPPER(access_code) = UPPER(?)", (code.strip(),)
     ).fetchone()
     return dict(row) if row else None
 
@@ -690,3 +690,51 @@ def add_feedback(entry: dict) -> None:
         (json.dumps(entry), _now()),
     )
     conn.commit()
+
+
+# --- Personal codes and the teacher's student list -----------------------
+
+def _code_stem(display_name: str) -> str:
+    stem = "".join(c for c in name_key(display_name).upper() if c.isalpha())
+    return (stem[:10] or "JUNO")
+
+
+def make_access_code(display_name: str) -> str:
+    """A readable, unused code such as SANDRA-4821."""
+    for _ in range(50):
+        code = f"{_code_stem(display_name)}-{secrets.randbelow(9000) + 1000}"
+        if student_by_access_code(code) is None:
+            return code
+    raise RuntimeError("could not find an unused access code")
+
+
+def set_access_code(student_id: str, code: str) -> str:
+    code = code.strip().upper()
+    other = student_by_access_code(code)
+    if other and other["student_id"] != student_id:
+        raise ValueError("That code already belongs to another student.")
+    conn = connect()
+    conn.execute("UPDATE students SET access_code = ? WHERE student_id = ?",
+                 (code, student_id))
+    conn.commit()
+    return code
+
+
+def list_students() -> list[dict]:
+    rows = connect().execute(
+        "SELECT s.student_id, s.display_name, s.access_code, s.created_at,"
+        " s.last_seen_at,"
+        " (SELECT COUNT(*) FROM calls c WHERE c.student_id = s.student_id"
+        "  AND c.status = 'ended') AS classes"
+        " FROM students s ORDER BY s.last_seen_at DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def open_calls_for(student_id: str) -> list[dict]:
+    """Every unfinished class of a student, oldest first."""
+    rows = connect().execute(
+        "SELECT call_id FROM calls WHERE student_id = ? AND status = 'open'"
+        " ORDER BY started_at", (student_id,)
+    ).fetchall()
+    return [get_call(r["call_id"]) for r in rows]
