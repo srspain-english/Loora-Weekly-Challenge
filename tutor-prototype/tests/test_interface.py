@@ -154,6 +154,12 @@ class PageTest(ServerTestCase, unittest.TestCase):
         self.assertIn("Space+Grotesk", self.html)
         self.assertIn("Instrument+Sans", self.html)
 
+    def test_start_screen_cards_do_not_follow_you_into_class(self) -> None:
+        # The "Last time" card stayed on screen during class and pushed the
+        # Pause / Help / End buttons off the bottom.
+        self.assertIn("$('last-time').hidden = true;", self.html)
+        self.assertIn("$('again-btn').onclick = () => { show('setup-screen'); checkForUnfinishedClass(); };", self.html)
+
     def test_class_screen_has_pause_help_and_typing(self) -> None:
         for el in ('id="pause-btn"', 'id="help-btn"', 'id="end-btn"',
                    'id="type-toggle"', 'id="call-clock"', 'id="juno-line"',

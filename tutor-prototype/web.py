@@ -503,6 +503,12 @@ function show(id) {
   });
   document.body.classList.toggle('in-call', id === 'chat-screen');
   document.body.classList.toggle('in-notes', id === 'report-screen');
+  // The "unfinished class" and "last time" cards belong to the start screen;
+  // left showing in class they push the buttons off the bottom.
+  if (id === 'chat-screen' || id === 'report-screen') {
+    $('resume-notice').style.display = 'none';
+    $('last-time').hidden = true;
+  }
 }
 
 // --- The class screen ------------------------------------------------------
@@ -1305,7 +1311,7 @@ window.addEventListener('beforeunload', (e) => {
   e.returnValue = '';
 });
 
-$('again-btn').onclick = () => show('setup-screen');
+$('again-btn').onclick = () => { show('setup-screen'); checkForUnfinishedClass(); };
 
 $('feedback-btn').onclick = () => {
   const panel = $('feedback-panel');
