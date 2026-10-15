@@ -81,17 +81,27 @@ INDEX_HTML = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0E131D">
+<meta name="theme-color" content="#F6F2EA">
 <title>Juno Teaching Assistant</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif&display=swap');
 
   :root{
+    color-scheme:light;
+    --bg:#F6F2EA; --bg-glow:#FBF8F1; --surface:#FFFFFF; --surface-2:#EDE7DA;
+    --line:#E4DDCE;
+    --ink:#191714; --ink-soft:#5C554A; --muted:#8C857A;
+    --accent:#5B2BD6; --accent-hi:#7A4BEE; --accent-tint:#F0ECFC; --accent-line:rgba(91,43,214,.4);
+    --ok:#2E9E73; --warn:#B7791F; --bad:#C2553F;
+    --brand:#FF4A1C;
+  }
+  /* The class itself stays dark, in purple. */
+  body.in-call{
     color-scheme:dark;
-    --bg:#0E131D; --surface:#171E2B; --surface-2:#1F2737;
-    --line:rgba(255,255,255,.09);
-    --ink:#F4EEE4; --ink-soft:#C9CCD3; --muted:#8A92A2;
-    --accent:#FF4A1C; --accent-hi:#FF8A5C; --accent-tint:rgba(255,74,28,.12);
+    --bg:#0E0C16; --bg-glow:#241C3B; --surface:#1A1628; --surface-2:#252036;
+    --line:rgba(255,255,255,.10);
+    --ink:#F6F2EA; --ink-soft:#CFC9DD; --muted:#8B84A8;
+    --accent:#7A4BEE; --accent-hi:#B79BFF; --accent-tint:rgba(122,75,238,.16); --accent-line:rgba(155,124,255,.4);
     --ok:#5FD0A0; --warn:#E3A33B; --bad:#FF7A6B;
   }
   *{box-sizing:border-box}
@@ -100,7 +110,7 @@ INDEX_HTML = """<!doctype html>
   body{
     min-height:100vh;min-height:100dvh;color:var(--ink-soft);
     background-color:var(--bg);
-    background-image:radial-gradient(120% 60% at 50% 0%, #1E2638 0%, var(--bg) 62%);
+    background-image:radial-gradient(120% 60% at 50% 0%, var(--bg-glow) 0%, var(--bg) 62%);
     background-attachment:fixed;
     font-family:'Instrument Sans',system-ui,sans-serif;font-size:15px;
   }
@@ -113,13 +123,13 @@ INDEX_HTML = """<!doctype html>
 
   /* Top bar and intro, on every screen except the class itself */
   .topbar{display:flex;align-items:center;gap:10px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
-  .live-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);flex-shrink:0}
+  .live-dot{width:7px;height:7px;border-radius:50%;background:var(--brand);box-shadow:0 0 10px var(--brand);flex-shrink:0}
   .brand-mark{color:var(--ink)}
   #feedback-btn{margin-left:auto;padding:7px 14px;font-size:12px;letter-spacing:.04em;text-transform:none}
   .lede{font-family:'Instrument Serif',Georgia,serif;color:var(--ink);font-size:30px;line-height:1.2;margin:26px 0 24px}
   body.in-call .topbar, body.in-call .lede{display:none}
-  body.in-notes .lede{display:none}
-  #progress-screen{background:none;border:none;padding:4px 0 0}
+  body.has-tabs .lede{display:none}
+  body.has-tabs .app{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
   body.in-call .app{height:100vh;height:100dvh;min-height:0;overflow:hidden}
 
   .panel{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px}
@@ -145,7 +155,7 @@ INDEX_HTML = """<!doctype html>
   .error:empty{display:none}
 
   #auth-screen{display:block}
-  #setup-screen, #chat-screen, #report-screen, #progress-screen{display:none}
+  #today-screen, #practice-screen, #progress-screen, #notes-screen, #chat-screen, #report-screen{display:none}
 
   .status{display:flex;align-items:center;justify-content:center;gap:7px;font-size:12.5px;color:var(--muted);margin-top:10px;min-height:18px;text-align:center}
   .status .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0}
@@ -156,7 +166,7 @@ INDEX_HTML = """<!doctype html>
   .status.saved .dot{background:var(--ok)}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
 
-  .notice{background:var(--accent-tint);border:1px solid rgba(255,74,28,.45);border-radius:16px;padding:16px 18px;margin-bottom:16px;font-size:14px}
+  .notice{background:var(--accent-tint);border:1px solid var(--accent-line);border-radius:16px;padding:16px 18px;margin-bottom:16px;font-size:14px}
   .notice h2{font-size:15px;margin:0 0 6px}
   .notice .row{margin-top:12px}
   #feedback-panel{margin-bottom:18px}
@@ -184,12 +194,12 @@ INDEX_HTML = """<!doctype html>
   #mic-btn{
     --orb:clamp(118px,22vh,180px);
     position:relative;width:var(--orb);height:var(--orb);border-radius:50%;padding:0;flex-shrink:0;
-    display:flex;align-items:center;justify-content:center;color:#2A120A;
-    background:radial-gradient(circle at 34% 28%, #FFC6AA 0%, #FF8A5C 24%, #FF4A1C 58%, #C2330E 100%);
-    box-shadow:0 20px 70px rgba(255,74,28,.32), inset 0 -12px 26px rgba(0,0,0,.18);
+    display:flex;align-items:center;justify-content:center;color:#fff;
+    background:radial-gradient(70% 70% at 34% 28%, #B79BFF 0%, #7A4BEE 46%, #4A21C4 100%);
+    box-shadow:0 20px 80px rgba(122,75,238,.5), inset 0 -12px 26px rgba(0,0,0,.18);
     transition:transform .15s ease, filter .3s ease;
   }
-  #mic-btn::before{content:"";position:absolute;inset:-20px;border-radius:50%;border:1px solid rgba(255,138,92,.28);pointer-events:none}
+  #mic-btn::before{content:"";position:absolute;inset:-20px;border-radius:50%;border:1px solid rgba(155,124,255,.38);pointer-events:none}
   #mic-btn svg{width:26%;height:26%}
   #mic-btn:active{transform:scale(.97)}
   #mic-btn:disabled{filter:grayscale(.9) brightness(.55);opacity:1}
@@ -211,7 +221,7 @@ INDEX_HTML = """<!doctype html>
   #chat-screen:has(#help-card:not([hidden])) .juno-line, #chat-screen:has(#type-row:not([hidden])) .juno-line{font-size:22px;line-height:1.3;max-height:20vh;margin-bottom:22px}
   #chat-screen:has(#help-card:not([hidden])) .orb-state, #chat-screen:has(#type-row:not([hidden])) .orb-state{margin-top:14px}
   .help-card{
-    background:var(--surface-2);border:1px solid rgba(255,74,28,.4);border-radius:16px;
+    background:var(--surface-2);border:1px solid var(--accent-line);border-radius:16px;
     padding:14px 16px;margin-top:10px;font-size:15px;line-height:1.5;color:var(--ink);
     max-height:32vh;overflow-y:auto;flex-shrink:0;
   }
@@ -245,7 +255,7 @@ INDEX_HTML = """<!doctype html>
 
   /* Report */
   /* Session notes */
-  #report-screen{background:none;border:none;padding:4px 0 0}
+  #report-screen, #progress-screen, #notes-screen, #today-screen, #practice-screen{background:none;border:none;padding:4px 0 0}
   .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
   .notes-title{font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:40px;line-height:1.02;color:var(--ink);margin:0}
   .notes-title i{color:var(--accent-hi)}
@@ -264,9 +274,9 @@ INDEX_HTML = """<!doctype html>
   .play-btn{width:46px;height:46px;flex-shrink:0;border-radius:50%;padding:0;background:var(--surface-2);color:var(--ink);font-size:15px;border:1px solid var(--line)}
   .pron strong{display:block;color:var(--ink)}
   .pron span{display:block;margin-top:3px;font-size:13.5px;color:var(--ink-soft);line-height:1.5}
-  .task-card{background:#F4EEE4;color:#121722;border-radius:22px;padding:20px;margin-top:30px}
-  .task-card .eyebrow{color:#5B6170}
-  .task-card h2{font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:26px;line-height:1.2;color:#121722;margin:6px 0 0}
+  .task-card{background:#191714;color:#F6F2EA;border-radius:22px;padding:20px;margin-top:30px}
+  .task-card .eyebrow{color:#A8A096}
+  .task-card h2{font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:26px;line-height:1.2;color:#F6F2EA;margin:6px 0 0}
   .task-card ul{margin:12px 0 0;padding-left:20px;line-height:1.55;font-size:14.5px}
   .task-card button{width:100%;margin-top:18px}
   .stat-row{display:flex;gap:10px;margin-top:22px}
@@ -275,12 +285,48 @@ INDEX_HTML = """<!doctype html>
   .stat span{font-size:11.5px;color:var(--muted);line-height:1.3}
   .bars{display:flex;align-items:flex-end;gap:9px;height:120px;margin-bottom:8px}
   .bars .bar{flex:1;background:var(--surface-2);border:1px solid var(--line);border-radius:6px 6px 3px 3px;min-height:4px}
-  .bars .bar.some{background:#6A3A2C;border-color:transparent}
+  .bars .bar.some{background:#C6B4F5;border-color:transparent}
   .bars .bar.today{background:var(--accent);border-color:transparent}
   .bar-days{display:flex;gap:9px;font-size:11px;color:var(--muted)}
   .bar-days span{flex:1;text-align:center}
   .note-card .meta{margin:0 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
   .note-card .body{margin:0;color:var(--ink);line-height:1.5}
+  /* Tabs, Today, Practice, Notes */
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:50;display:none;background:rgba(246,242,234,.94);
+    -webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border-top:1px solid var(--line);
+    padding:8px 12px calc(8px + env(safe-area-inset-bottom))}
+  body.has-tabs .tabs{display:block}
+  .tabs-inner{display:flex;max-width:480px;margin:0 auto}
+  .tabs button{flex:1;background:none;border-radius:12px;padding:6px 2px;display:flex;flex-direction:column;align-items:center;
+    gap:4px;font-family:'Instrument Sans',sans-serif;font-size:10.5px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .tabs button.on{color:var(--accent)}
+  .tabs svg{width:22px;height:22px}
+  body.has-tabs .topbar{margin-bottom:20px}
+  #scenario-row label{margin-top:16px}
+  .hello-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:22px}
+  .hello{font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:36px;line-height:1.05;color:var(--ink);margin:0}
+  .hello i{color:var(--accent)}
+  .level-badge{display:flex;flex-direction:column;align-items:center;gap:3px;background:var(--surface-2);border:1px solid var(--line);
+    border-radius:14px;padding:9px 12px;color:var(--ink)}
+  .level-badge b{font-size:17px;color:var(--accent)}
+  .level-badge span{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:500}
+  .mode-card{display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);
+    border-radius:22px;padding:16px 18px;margin-bottom:10px;color:var(--ink);font-family:inherit;font-weight:400}
+  .mode-card .ico{width:44px;height:44px;border-radius:50%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex:none;color:var(--ink)}
+  .mode-card .ico svg{width:20px;height:20px}
+  .mode-card b{display:block;font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600}
+  .mode-card .d{display:block;font-size:13px;line-height:1.4;color:var(--muted);margin-top:2px}
+  .mode-card .tick{margin-left:auto;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line);flex:none}
+  .mode-card.on{background:var(--accent-tint);border-color:var(--accent)}
+  .mode-card.on .ico{background:var(--accent);color:#fff}
+  .mode-card.on .tick{background:var(--accent);border-color:var(--accent)}
+  #today-screen .mode-card[data-mode="free"]{background:#191714;color:#F6F2EA;border-color:#191714}
+  #today-screen .mode-card[data-mode="free"] .d{color:#C6BFB3}
+  #today-screen .mode-card[data-mode="free"] .ico{background:var(--accent);color:#fff}
+  .go{margin-left:auto;color:var(--muted);flex:none}
+  #profile-card{margin-bottom:16px}
+  #profile-change{margin:0 0 16px}
+  .note-open{display:block;width:100%;text-align:left;padding:16px 18px;font-family:inherit;font-weight:400;color:var(--ink);border-radius:20px}
   .tag{font-size:10px;text-transform:uppercase;color:var(--muted);font-family:ui-monospace,monospace}
 
   @media (prefers-reduced-motion:reduce){
@@ -314,7 +360,25 @@ INDEX_HTML = """<!doctype html>
     <div class="error" id="auth-error"></div>
   </div>
 
-  <div id="resume-notice" class="notice" style="display:none">
+  <div id="today-screen">
+    <p class="eyebrow" id="today-date"></p>
+    <div class="hello-row">
+      <h1 class="hello" id="hello">Hello</h1>
+      <button class="level-badge" id="level-badge" aria-label="Change your level"><b id="level-badge-text">B1</b><span>Level</span></button>
+    </div>
+
+    <div id="profile-card" class="panel" hidden>
+      <label for="student">Your name</label>
+      <input type="text" id="student" placeholder="e.g. Maria">
+
+      <label for="student-code">Your personal code <span class="hint">(optional — lets Juno recognise you on any device)</span></label>
+      <input type="text" id="student-code" placeholder="Leave empty if your teacher hasn't given you one">
+      <div class="row" style="margin-top:16px"><button id="profile-save">Continue</button></div>
+      <div class="error" id="profile-error"></div>
+    </div>
+    <button class="link" id="profile-change" hidden>Not you? Change name or code</button>
+
+    <div id="resume-notice" class="notice" style="display:none">
     <h2>You have an unfinished class</h2>
     <p id="resume-detail">Started earlier and never closed.</p>
     <div class="row">
@@ -322,49 +386,18 @@ INDEX_HTML = """<!doctype html>
       <button class="ghost" id="resume-report-btn">Just get my report</button>
       <button class="ghost" id="resume-discard-btn">Discard</button>
     </div>
-  </div>
+    </div>
 
-  <div id="last-time" class="notice" hidden>
+    <div id="last-time" class="notice" hidden>
     <h2>Last time</h2>
     <p id="last-time-text"></p>
     <p id="last-time-next" style="margin-top:6px"></p>
-  </div>
-
-  <div id="setup-screen" class="panel">
-    <label for="student">Your name</label>
-    <input type="text" id="student" placeholder="e.g. Maria">
-
-    <label for="student-code">Your personal code <span class="hint">(optional — lets Juno recognise you on any device)</span></label>
-    <input type="text" id="student-code" placeholder="Leave empty if your teacher hasn't given you one">
-
-    <label for="mode">Mode</label>
-    <select id="mode">
-      <option value="free">Free Conversation</option>
-      <option value="business">Business English</option>
-      <option value="structured">Structured Class</option>
-    </select>
-
-    <label for="level">Level</label>
-    <select id="level">
-      <option value="A2">A2</option>
-      <option value="B1" selected>B1</option>
-      <option value="B2">B2</option>
-      <option value="C1">C1</option>
-    </select>
-
-    <div id="scenario-row" style="display:none">
-      <label for="scenario">Scenario <span class="hint">(optional — random if left as "Surprise me")</span></label>
-      <select id="scenario"><option value="">Surprise me</option></select>
     </div>
 
-    <div class="row" style="margin-top:22px">
-      <button id="start-btn" style="flex:1">Start class</button>
-    </div>
-    <div class="row" style="margin-top:10px">
-      <button class="ghost" id="progress-btn" style="flex:1">My progress</button>
-    </div>
-    <div class="error" id="start-error"></div>
-    <div class="status" id="setup-status"><span class="dot"></span><span id="setup-status-text"></span></div>
+    <p class="notes-label" style="margin-top:8px">Talk with Juno</p>
+    <button class="mode-card" data-mode="free"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span><span><b>Free talk</b><span class="d">Talk about anything. Juno follows you.</span></span><svg class="go" width="8" height="13" viewBox="0 0 8 13" aria-hidden="true"><path d="M1 1l6 5.5L1 12" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></button>
+    <button class="mode-card" data-mode="business"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M8.5 7V4.5h7V7"/></svg></span><span><b>Business English</b><span class="d">Real work moments: meetings, updates, emails.</span></span><svg class="go" width="8" height="13" viewBox="0 0 8 13" aria-hidden="true"><path d="M1 1l6 5.5L1 12" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></button>
+    <button class="mode-card" data-mode="structured"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.4 5.4 5.6.8-4.1 4 1 5.8L12 16.3 7.1 19l1-5.8-4.1-4 5.6-.8z"/></svg></span><span><b>Structured class</b><span class="d">A step-by-step class with a focus for today.</span></span><svg class="go" width="8" height="13" viewBox="0 0 8 13" aria-hidden="true"><path d="M1 1l6 5.5L1 12" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></button>
 
     <div class="privacy">
       <details>
@@ -378,6 +411,52 @@ INDEX_HTML = """<!doctype html>
         </ul>
       </details>
     </div>
+  </div>
+
+  <div id="practice-screen">
+    <p class="eyebrow">Before you begin</p>
+    <h1 class="notes-title">Choose how<br><i>you want to talk.</i></h1>
+    <div style="margin-top:22px">
+    <button class="mode-card" data-mode="free"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span><span><b>Free talk</b><span class="d">Talk about anything. Juno follows you.</span></span><span class="tick"></span></button>
+    <button class="mode-card" data-mode="business"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M8.5 7V4.5h7V7"/></svg></span><span><b>Business English</b><span class="d">Real work moments: meetings, updates, emails.</span></span><span class="tick"></span></button>
+    <button class="mode-card" data-mode="structured"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.4 5.4 5.6.8-4.1 4 1 5.8L12 16.3 7.1 19l1-5.8-4.1-4 5.6-.8z"/></svg></span><span><b>Structured class</b><span class="d">A step-by-step class with a focus for today.</span></span><span class="tick"></span></button>
+    </div>
+    <select id="mode" hidden>
+      <option value="free">Free Conversation</option>
+      <option value="business">Business English</option>
+      <option value="structured">Structured Class</option>
+    </select>
+
+    <div class="panel" style="margin-top:6px">
+      <label for="level">Level</label>
+      <select id="level">
+        <option value="A2">A2</option>
+        <option value="B1" selected>B1</option>
+        <option value="B2">B2</option>
+        <option value="C1">C1</option>
+      </select>
+
+      <div id="scenario-row" style="display:none">
+        <label for="scenario">Scenario <span class="hint">(optional — random if left as "Surprise me")</span></label>
+        <select id="scenario"><option value="">Surprise me</option></select>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:18px">
+      <button id="start-btn" style="flex:1">Begin conversation →</button>
+    </div>
+    <div class="error" id="start-error"></div>
+    <div class="status" id="setup-status"><span class="dot"></span><span id="setup-status-text"></span></div>
+  </div>
+
+  <div id="progress-screen">
+    <div id="progress-body"></div>
+  </div>
+
+  <div id="notes-screen">
+    <p class="eyebrow">Your notes</p>
+    <h1 class="notes-title">Every class,<br><i>kept for you.</i></h1>
+    <div id="notes-list" style="margin-top:22px"></div>
   </div>
 
   <div id="chat-screen">
@@ -423,11 +502,6 @@ INDEX_HTML = """<!doctype html>
     </div>
   </div>
 
-  <div id="progress-screen">
-    <div id="progress-body"></div>
-    <button class="ghost" id="progress-back" style="width:100%;margin-top:26px">Back</button>
-  </div>
-
   <div id="report-screen">
     <div id="recap"></div>
     <div class="task-card">
@@ -438,6 +512,13 @@ INDEX_HTML = """<!doctype html>
     </div>
   </div>
 </div>
+
+<nav class="tabs" id="tabs" aria-label="Sections"><div class="tabs-inner">
+  <button data-tab="today"><svg viewBox="0 0 21 21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8.5L10.5 2l8 6.5V18a1 1 0 0 1-1 1h-14a1 1 0 0 1-1-1V8.5z"/></svg>Today</button>
+  <button data-tab="practice"><svg viewBox="0 0 21 21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="7" y="1.5" width="7" height="11" rx="3.5"/><path d="M4 11a6.5 6.5 0 0 0 13 0M10.5 17.5v2"/></svg>Practice</button>
+  <button data-tab="progress"><svg viewBox="0 0 21 21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M3 17V9M9 17V4M15 17v-6"/></svg>Progress</button>
+  <button data-tab="notes"><svg viewBox="0 0 21 21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M2 4.5c3-1.5 6-1.2 8.5 1v12c-2.5-2.2-5.5-2.5-8.5-1zM19 4.5c-3-1.5-6-1.2-8.5 1v12c2.5-2.2 5.5-2.5 8.5-1z"/></svg>Notes</button>
+</div></nav>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -518,18 +599,22 @@ function showSaved(iso) {
 }
 setInterval(() => { if (lastSavedAt && $('chat-status').className.includes('saved')) showSaved(); }, 15000);
 
+const TAB_OF = { 'today-screen': 'today', 'practice-screen': 'practice', 'progress-screen': 'progress',
+                 'notes-screen': 'notes', 'report-screen': 'notes' };
+const SCREENS = ['auth-screen', 'today-screen', 'practice-screen', 'progress-screen', 'notes-screen',
+                 'chat-screen', 'report-screen'];
+
 function show(id) {
-  ['auth-screen', 'setup-screen', 'chat-screen', 'report-screen', 'progress-screen'].forEach((s) => {
+  SCREENS.forEach((s) => {
     $(s).style.display = s !== id ? 'none' : (s === 'chat-screen' ? 'flex' : 'block');
   });
   document.body.classList.toggle('in-call', id === 'chat-screen');
-  document.body.classList.toggle('in-notes', id === 'report-screen' || id === 'progress-screen');
-  // The "unfinished class" and "last time" cards belong to the start screen;
-  // left showing in class they push the buttons off the bottom.
-  if (id !== 'setup-screen') {
-    $('resume-notice').style.display = 'none';
-    $('last-time').hidden = true;
-  }
+  document.body.classList.toggle('has-tabs', id in TAB_OF);
+  document.querySelectorAll('#tabs button').forEach((btn) => {
+    btn.classList.toggle('on', btn.dataset.tab === TAB_OF[id]);
+  });
+  const theme = document.querySelector('meta[name=theme-color]');
+  if (theme) theme.content = id === 'chat-screen' ? '#0E0C16' : '#F6F2EA';
 }
 
 // --- The class screen ------------------------------------------------------
@@ -1006,6 +1091,7 @@ async function checkForUnfinishedClass() {
       access_code: $('student-code') ? $('student-code').value : null,
     });
     const last = data.last_session;
+    adoptServerName(data.name);
     $('last-time').hidden = !(last && (last.what_we_did || last.next_recommendation));
     if (last) {
       $('last-time-text').textContent = last.what_we_did || '';
@@ -1067,7 +1153,8 @@ $('resume-discard-btn').onclick = async () => {
 function afterAuth() {
   $('lede').textContent = 'A live practice call, corrected as you go.';
   $('feedback-btn').style.display = 'inline-block';
-  show('setup-screen');
+  restoreIdentity();
+  show('today-screen');
   checkForUnfinishedClass();
   fetch('/scenarios.json', { credentials: 'same-origin' }).then((r) => r.json()).then((data) => {
     scenarios = data;
@@ -1399,29 +1486,133 @@ function renderProgress(p) {
   }
 }
 
-$('progress-btn').onclick = async () => {
-  $('progress-btn').disabled = true;
-  $('start-error').textContent = '';
+async function loadProgress() {
+  show('progress-screen');
+  const el = $('progress-body');
+  el.textContent = 'Loading…';
   try {
     const data = await api('/api/progress', {
       student: $('student').value,
       access_code: $('student-code').value,
       tz_offset: new Date().getTimezoneOffset(),
-    }, { onWaking: () => setStatus('setup-status', 'Juno is waking up — this can take up to a minute…', 'waking') });
-    setStatus('setup-status', '');
+    }, { onWaking: () => { el.textContent = 'Juno is waking up — this can take up to a minute…'; } });
     renderProgress(data);
-    show('progress-screen');
-    window.scrollTo(0, 0);
   } catch (e) {
-    setStatus('setup-status', '');
-    $('start-error').textContent = e.message;
-  } finally {
-    $('progress-btn').disabled = false;
+    el.textContent = e.message;
   }
-};
-$('progress-back').onclick = () => { show('setup-screen'); checkForUnfinishedClass(); };
+  window.scrollTo(0, 0);
+}
 
-$('again-btn').onclick = () => { show('setup-screen'); checkForUnfinishedClass(); };
+let loadedNotes = [];
+
+function renderNotesList() {
+  const el = $('notes-list');
+  el.innerHTML = '';
+  if (!loadedNotes.length) {
+    el.append(make('p', 'notes-summary', 'No notes yet. Finish a class with End and its notes will be kept here.'));
+    return;
+  }
+  loadedNotes.forEach((n) => {
+    const when = new Date(n.started_at).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+    const card = make('button', 'note-card note-open');
+    card.append(make('p', 'meta', `${when} · ${MODE_NAMES[n.mode] || n.mode} · ${n.minutes} min`),
+                make('p', 'body', n.report.what_we_did || 'Class notes'));
+    card.onclick = () => { renderRecap(n.report, null); show('report-screen'); };
+    el.append(card);
+  });
+}
+
+async function loadNotes() {
+  show('notes-screen');
+  const el = $('notes-list');
+  el.textContent = 'Loading…';
+  try {
+    const data = await api('/api/notes', { student: $('student').value, access_code: $('student-code').value },
+      { onWaking: () => { el.textContent = 'Juno is waking up — this can take up to a minute…'; } });
+    loadedNotes = data.notes || [];
+    renderNotesList();
+  } catch (e) {
+    el.textContent = e.message;
+  }
+  window.scrollTo(0, 0);
+}
+
+function goTab(tab) {
+  if (tab === 'today') { show('today-screen'); checkForUnfinishedClass(); }
+  else if (tab === 'practice') show('practice-screen');
+  else if (tab === 'progress') loadProgress();
+  else if (tab === 'notes') loadNotes();
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('#tabs button').forEach((btn) => btn.addEventListener('click', () => goTab(btn.dataset.tab)));
+
+// Name and code are asked once and remembered on this device.
+const IDENTITY_KEY = 'juno_identity';
+
+function saveIdentity() {
+  try {
+    localStorage.setItem(IDENTITY_KEY, JSON.stringify({ name: $('student').value.trim(), code: $('student-code').value.trim() }));
+  } catch (e) { /* private window: they will be asked again next time */ }
+}
+
+function renderHello() {
+  const hour = new Date().getHours();
+  const part = hour < 12 ? 'Good morning' : hour < 19 ? 'Good afternoon' : 'Good evening';
+  const hello = $('hello');
+  hello.innerHTML = '';
+  hello.append(part + ',', document.createElement('br'), make('i', '', $('student').value.trim() || 'welcome'));
+  $('today-date').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long' }) + ' · your practice space';
+  $('level-badge-text').textContent = $('level').value;
+}
+
+function showProfile(open) {
+  $('profile-card').hidden = !open;
+  $('profile-change').hidden = open;
+}
+
+function restoreIdentity() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(IDENTITY_KEY)) || {}; } catch (e) { saved = {}; }
+  if (saved.name && !$('student').value) $('student').value = saved.name;
+  if (saved.code && !$('student-code').value) $('student-code').value = saved.code;
+  showProfile(!($('student').value.trim() || $('student-code').value.trim()));
+  renderHello();
+}
+
+// A student who types only a personal code is greeted by the name their
+// teacher registered, not by "welcome".
+function adoptServerName(name) {
+  if (!name || name === 'Student' || $('student').value.trim()) return;
+  $('student').value = name;
+  saveIdentity();
+  renderHello();
+}
+
+$('profile-save').onclick = () => {
+  if (!$('student').value.trim() && !$('student-code').value.trim()) {
+    $('profile-error').textContent = 'Type your name to begin.';
+    return;
+  }
+  $('profile-error').textContent = '';
+  saveIdentity();
+  showProfile(false);
+  renderHello();
+  checkForUnfinishedClass();
+};
+$('profile-change').onclick = () => showProfile(true);
+$('level').addEventListener('change', renderHello);
+$('level-badge').onclick = () => goTab('practice');
+
+function selectMode(mode) {
+  $('mode').value = mode;
+  $('mode').onchange();
+  document.querySelectorAll('#practice-screen .mode-card').forEach((c) => c.classList.toggle('on', c.dataset.mode === mode));
+}
+document.querySelectorAll('#practice-screen .mode-card').forEach((c) => c.addEventListener('click', () => selectMode(c.dataset.mode)));
+document.querySelectorAll('#today-screen .mode-card').forEach((c) => c.addEventListener('click', () => { selectMode(c.dataset.mode); goTab('practice'); }));
+selectMode('free');
+
+$('again-btn').onclick = () => goTab('today');
 
 $('feedback-btn').onclick = () => {
   const panel = $('feedback-panel');
@@ -1681,6 +1872,9 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/progress":
                 self._require_auth(session)
                 self._handle_progress(session, data)
+            elif self.path == "/api/notes":
+                self._require_auth(session)
+                self._handle_notes(session, data)
             elif self.path == "/api/feedback":
                 self._require_auth(session)
                 self._handle_feedback(session, data)
@@ -1919,11 +2113,12 @@ class Handler(BaseHTTPRequestHandler):
                     "what_we_did": history[-1].get("what_we_did"),
                     "next_recommendation": history[-1].get("next_recommendation")}
         call = store.open_call_for(student["student_id"])
+        name = student["display_name"]
         if not call:
-            self._send_json({"open_call": None, "last_session": last})
+            self._send_json({"open_call": None, "last_session": last, "name": name})
             return
         session["call_id"] = call["call_id"]
-        self._send_json({"last_session": last, "open_call": {
+        self._send_json({"last_session": last, "name": name, "open_call": {
             "call_id": call["call_id"],
             "mode": call["mode"],
             "level": call["level"],
@@ -1932,6 +2127,11 @@ class Handler(BaseHTTPRequestHandler):
             "updated_at": call["updated_at"],
             "transcript": call["transcript"][1:],  # drop the synthetic opener
         }})
+
+    def _handle_notes(self, session: dict, data: dict) -> None:
+        """Every finished class's session notes, for the Notes tab."""
+        student = self._resolve_student(data)
+        self._send_json({"notes": store.notes_for(student["student_id"])})
 
     def _handle_progress(self, session: dict, data: dict) -> None:
         """The numbers behind the Progress screen. All of it is read from

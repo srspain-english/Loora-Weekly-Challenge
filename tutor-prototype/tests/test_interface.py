@@ -151,18 +151,23 @@ class PageTest(ServerTestCase, unittest.TestCase):
     def test_offers_a_personal_code_field(self) -> None:
         self.assertIn('id="student-code"', self.html)
 
-    def test_keeps_sr_brand_accent_and_fonts(self) -> None:
-        # The class screen went dark, but the S&R orange and typefaces the
-        # rest of S&R's material shares are kept.
-        self.assertIn("--accent:#FF4A1C", self.html)
+    def test_uses_the_juno2_palette_and_keeps_the_typefaces(self) -> None:
+        # Cream and purple, like the Juno 2.0 design; the class screen stays
+        # dark. S&R orange survives only as the small brand dot.
+        self.assertIn("--accent:#5B2BD6", self.html)
+        self.assertIn("--brand:#FF4A1C", self.html)
         self.assertIn("Space+Grotesk", self.html)
         self.assertIn("Instrument+Sans", self.html)
 
     def test_start_screen_cards_do_not_follow_you_into_class(self) -> None:
         # The "Last time" card stayed on screen during class and pushed the
         # Pause / Help / End buttons off the bottom.
-        self.assertIn("$('last-time').hidden = true;", self.html)
-        self.assertIn("$('again-btn').onclick = () => { show('setup-screen'); checkForUnfinishedClass(); };", self.html)
+        # (Now they live inside the Today screen, which is hidden in class.)
+        today = self.html.index('id="today-screen"')
+        practice = self.html.index('id="practice-screen"')
+        self.assertTrue(today < self.html.index('id="last-time"') < practice)
+        self.assertTrue(today < self.html.index('id="resume-notice"') < practice)
+        self.assertIn("$('again-btn').onclick = () => goTab('today');", self.html)
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_page_script_has_no_syntax_errors(self) -> None:
@@ -176,6 +181,20 @@ class PageTest(ServerTestCase, unittest.TestCase):
             path.write_text("\n".join(scripts), encoding="utf-8")
             result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_has_four_tabs_each_with_a_screen(self) -> None:
+        for tab, screen in (("today", "today-screen"), ("practice", "practice-screen"),
+                            ("progress", "progress-screen"), ("notes", "notes-screen")):
+            self.assertIn(f'data-tab="{tab}"', self.html)
+            self.assertIn(f'id="{screen}"', self.html)
+        # The class itself has no tab bar.
+        self.assertIn("document.body.classList.toggle('has-tabs', id in TAB_OF);", self.html)
+        self.assertNotIn("'chat-screen': ", self.html.split("const TAB_OF")[1].split("};")[0])
+
+    def test_remembers_the_student_on_this_device(self) -> None:
+        self.assertIn("juno_identity", self.html)
+        self.assertIn("function restoreIdentity(", self.html)
+        self.assertIn('id="profile-card"', self.html)
 
     def test_class_screen_has_pause_help_and_typing(self) -> None:
         for el in ('id="pause-btn"', 'id="help-btn"', 'id="end-btn"',

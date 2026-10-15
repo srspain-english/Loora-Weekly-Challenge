@@ -228,9 +228,17 @@ no name, no key: a log carrying class content would be a second copy of the
 student's data somewhere nobody is guarding. Visible in Render's log viewer,
 and greppable for `"event": "turn"`.
 
+### The screens
+
+Four tabs along the bottom: **Today** (greeting, the three ways to talk, the
+"last time" card), **Practice** (choose the mode, level and scenario, then
+begin), **Progress** (below) and **Notes** (every finished class's session
+notes, reopenable). The class itself is dark and has no tab bar. A student's
+name and personal code are asked once and remembered on that device.
+
 ### The Progress screen
 
-"My progress" on the start screen shows a student their own numbers: classes,
+The Progress tab shows a student their own numbers: classes,
 minutes in class, a 7-day chart, a streak, what they said, the words and
 phrases they picked up, what Juno says they are working on, and recent
 classes. Everything is read from saved classes and Juno's memory of the

@@ -131,7 +131,7 @@ class ProgressEndpointTest(ServerTestCase, unittest.TestCase):
 
     def test_page_has_a_progress_screen(self) -> None:
         html = web.INDEX_HTML
-        for piece in ('id="progress-btn"', 'id="progress-screen"', "/api/progress",
+        for piece in ('data-tab="progress"', 'id="progress-screen"', "/api/progress",
                       "function renderProgress(", "getTimezoneOffset()"):
             self.assertIn(piece, html)
 

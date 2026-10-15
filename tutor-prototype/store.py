@@ -810,3 +810,22 @@ def progress_for(student_id: str, tz_offset_minutes: int = 0, today=None) -> dic
             for c in reversed(classes[-5:])
         ],
     }
+
+
+def notes_for(student_id: str, limit: int = 30) -> list[dict]:
+    """The student's finished classes with their session notes, newest first."""
+    rows = connect().execute(
+        "SELECT call_id, mode, started_at, ended_at, report FROM calls"
+        " WHERE student_id = ? AND status = 'ended' AND report IS NOT NULL"
+        " ORDER BY started_at DESC LIMIT ?",
+        (student_id, int(limit)),
+    ).fetchall()
+    notes = []
+    for r in rows:
+        start, end = _parse_time(r["started_at"]), _parse_time(r["ended_at"])
+        minutes = (min(MAX_MINUTES_PER_CLASS, max(0.0, (end - start).total_seconds() / 60))
+                   if start and end else 0)
+        notes.append({"call_id": r["call_id"], "mode": r["mode"],
+                      "started_at": r["started_at"], "minutes": round(minutes),
+                      "report": json.loads(r["report"])})
+    return notes
