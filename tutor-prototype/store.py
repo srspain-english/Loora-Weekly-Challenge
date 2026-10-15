@@ -738,3 +738,75 @@ def open_calls_for(student_id: str) -> list[dict]:
         " ORDER BY started_at", (student_id,)
     ).fetchall()
     return [get_call(r["call_id"]) for r in rows]
+
+
+# A class left open overnight would otherwise count as eight hours of practice.
+MAX_MINUTES_PER_CLASS = 45
+
+
+def _parse_time(value: str | None):
+    try:
+        return datetime.fromisoformat(value) if value else None
+    except ValueError:
+        return None
+
+
+def progress_for(student_id: str, tz_offset_minutes: int = 0, today=None) -> dict:
+    """Real numbers for the student's Progress screen, from saved classes.
+
+    `tz_offset_minutes` is the browser's getTimezoneOffset() (minutes to ADD to
+    local time to get UTC), so a class at 23:30 in Madrid counts as that day
+    for the student, not the next. Minutes are the time between starting and
+    finishing a class, capped, since the app doesn't time speech itself.
+    """
+    from datetime import timedelta
+
+    tz_offset_minutes = max(-840, min(840, int(tz_offset_minutes)))
+    rows = connect().execute(
+        "SELECT mode, started_at, ended_at, turns, report FROM calls"
+        " WHERE student_id = ? AND status = 'ended' ORDER BY started_at",
+        (student_id,),
+    ).fetchall()
+
+    classes = []
+    for r in rows:
+        start, end = _parse_time(r["started_at"]), _parse_time(r["ended_at"])
+        if not start or not end:
+            continue
+        minutes = min(MAX_MINUTES_PER_CLASS, max(0.0, (end - start).total_seconds() / 60))
+        local_day = (start - timedelta(minutes=tz_offset_minutes)).date()
+        report = json.loads(r["report"]) if r["report"] else {}
+        classes.append({"day": local_day, "minutes": minutes, "mode": r["mode"],
+                        "turns": r["turns"], "what_we_did": report.get("what_we_did") or ""})
+
+    if today is None:
+        today = (datetime.now(timezone.utc) - timedelta(minutes=tz_offset_minutes)).date()
+    by_day: dict = {}
+    for c in classes:
+        by_day[c["day"]] = by_day.get(c["day"], 0.0) + c["minutes"]
+
+    week = []
+    for i in range(6, -1, -1):
+        d = today - timedelta(days=i)
+        week.append({"date": d.isoformat(), "weekday": d.strftime("%a"),
+                     "minutes": round(by_day.get(d, 0.0))})
+
+    # A streak survives until the end of the day after the last class.
+    streak, d = 0, today if today in by_day else today - timedelta(days=1)
+    while d in by_day:
+        streak += 1
+        d -= timedelta(days=1)
+
+    return {
+        "classes_total": len(classes),
+        "minutes_total": round(sum(c["minutes"] for c in classes)),
+        "minutes_week": sum(w["minutes"] for w in week),
+        "exchanges_total": sum(c["turns"] for c in classes),
+        "streak_days": streak,
+        "week": week,
+        "recent": [
+            {"date": c["day"].isoformat(), "mode": c["mode"],
+             "minutes": round(c["minutes"]), "what_we_did": c["what_we_did"]}
+            for c in reversed(classes[-5:])
+        ],
+    }

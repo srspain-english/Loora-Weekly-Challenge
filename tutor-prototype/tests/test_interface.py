@@ -10,7 +10,11 @@ silently pointing at nothing.
 
 from __future__ import annotations
 
+import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import unittest
 import urllib.request
 from pathlib import Path
@@ -159,6 +163,19 @@ class PageTest(ServerTestCase, unittest.TestCase):
         # Pause / Help / End buttons off the bottom.
         self.assertIn("$('last-time').hidden = true;", self.html)
         self.assertIn("$('again-btn').onclick = () => { show('setup-screen'); checkForUnfinishedClass(); };", self.html)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_page_script_has_no_syntax_errors(self) -> None:
+        # A repeated `const` or a stray bracket stops the whole script, so the
+        # page loads and then does nothing - and none of the checks above, which
+        # only look for text, would notice.
+        scripts = re.findall(r"<script>(.*?)</script>", self.html, re.S)
+        self.assertTrue(scripts)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "page.js"
+            path.write_text("\n".join(scripts), encoding="utf-8")
+            result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_class_screen_has_pause_help_and_typing(self) -> None:
         for el in ('id="pause-btn"', 'id="help-btn"', 'id="end-btn"',

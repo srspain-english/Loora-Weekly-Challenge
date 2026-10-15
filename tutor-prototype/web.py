@@ -119,6 +119,7 @@ INDEX_HTML = """<!doctype html>
   .lede{font-family:'Instrument Serif',Georgia,serif;color:var(--ink);font-size:30px;line-height:1.2;margin:26px 0 24px}
   body.in-call .topbar, body.in-call .lede{display:none}
   body.in-notes .lede{display:none}
+  #progress-screen{background:none;border:none;padding:4px 0 0}
   body.in-call .app{height:100vh;height:100dvh;min-height:0;overflow:hidden}
 
   .panel{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px}
@@ -144,7 +145,7 @@ INDEX_HTML = """<!doctype html>
   .error:empty{display:none}
 
   #auth-screen{display:block}
-  #setup-screen, #chat-screen, #report-screen{display:none}
+  #setup-screen, #chat-screen, #report-screen, #progress-screen{display:none}
 
   .status{display:flex;align-items:center;justify-content:center;gap:7px;font-size:12.5px;color:var(--muted);margin-top:10px;min-height:18px;text-align:center}
   .status .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0}
@@ -268,6 +269,18 @@ INDEX_HTML = """<!doctype html>
   .task-card h2{font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:26px;line-height:1.2;color:#121722;margin:6px 0 0}
   .task-card ul{margin:12px 0 0;padding-left:20px;line-height:1.55;font-size:14.5px}
   .task-card button{width:100%;margin-top:18px}
+  .stat-row{display:flex;gap:10px;margin-top:22px}
+  .stat{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:14px}
+  .stat b{display:block;font-family:'Space Grotesk',sans-serif;font-size:24px;color:var(--ink);margin-bottom:2px}
+  .stat span{font-size:11.5px;color:var(--muted);line-height:1.3}
+  .bars{display:flex;align-items:flex-end;gap:9px;height:120px;margin-bottom:8px}
+  .bars .bar{flex:1;background:var(--surface-2);border:1px solid var(--line);border-radius:6px 6px 3px 3px;min-height:4px}
+  .bars .bar.some{background:#6A3A2C;border-color:transparent}
+  .bars .bar.today{background:var(--accent);border-color:transparent}
+  .bar-days{display:flex;gap:9px;font-size:11px;color:var(--muted)}
+  .bar-days span{flex:1;text-align:center}
+  .note-card .meta{margin:0 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  .note-card .body{margin:0;color:var(--ink);line-height:1.5}
   .tag{font-size:10px;text-transform:uppercase;color:var(--muted);font-family:ui-monospace,monospace}
 
   @media (prefers-reduced-motion:reduce){
@@ -347,6 +360,9 @@ INDEX_HTML = """<!doctype html>
     <div class="row" style="margin-top:22px">
       <button id="start-btn" style="flex:1">Start class</button>
     </div>
+    <div class="row" style="margin-top:10px">
+      <button class="ghost" id="progress-btn" style="flex:1">My progress</button>
+    </div>
     <div class="error" id="start-error"></div>
     <div class="status" id="setup-status"><span class="dot"></span><span id="setup-status-text"></span></div>
 
@@ -405,6 +421,11 @@ INDEX_HTML = """<!doctype html>
         <label><input type="checkbox" id="speak-toggle" checked> Juno speaks</label>
       </div>
     </div>
+  </div>
+
+  <div id="progress-screen">
+    <div id="progress-body"></div>
+    <button class="ghost" id="progress-back" style="width:100%;margin-top:26px">Back</button>
   </div>
 
   <div id="report-screen">
@@ -498,14 +519,14 @@ function showSaved(iso) {
 setInterval(() => { if (lastSavedAt && $('chat-status').className.includes('saved')) showSaved(); }, 15000);
 
 function show(id) {
-  ['auth-screen', 'setup-screen', 'chat-screen', 'report-screen'].forEach((s) => {
+  ['auth-screen', 'setup-screen', 'chat-screen', 'report-screen', 'progress-screen'].forEach((s) => {
     $(s).style.display = s !== id ? 'none' : (s === 'chat-screen' ? 'flex' : 'block');
   });
   document.body.classList.toggle('in-call', id === 'chat-screen');
-  document.body.classList.toggle('in-notes', id === 'report-screen');
+  document.body.classList.toggle('in-notes', id === 'report-screen' || id === 'progress-screen');
   // The "unfinished class" and "last time" cards belong to the start screen;
   // left showing in class they push the buttons off the bottom.
-  if (id === 'chat-screen' || id === 'report-screen') {
+  if (id !== 'setup-screen') {
     $('resume-notice').style.display = 'none';
     $('last-time').hidden = true;
   }
@@ -1311,6 +1332,95 @@ window.addEventListener('beforeunload', (e) => {
   e.returnValue = '';
 });
 
+function shortDate(iso) {
+  return new Date(iso + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
+function renderProgress(p) {
+  const el = $('progress-body');
+  el.innerHTML = '';
+  el.append(make('p', 'eyebrow', 'Your progress'));
+  const title = make('h1', 'notes-title');
+  if (p.classes_total) {
+    title.append(p.classes_total === 1 ? '1 class,' : `${p.classes_total} classes,`,
+      document.createElement('br'), make('i', '', p.minutes_total === 1 ? '1 minute' : `${p.minutes_total} minutes`));
+  } else {
+    title.append('Your first class', document.createElement('br'), make('i', '', 'is waiting'));
+  }
+  el.append(title);
+  if (!p.classes_total) {
+    el.append(make('p', 'notes-summary', 'Finish a class with End and your numbers will start to appear here.'));
+  } else if (p.streak_days > 1) {
+    el.append(make('p', 'notes-summary', `${p.streak_days} days in a row. Keep it going.`));
+  }
+
+  const stats = make('div', 'stat-row');
+  [[p.minutes_week, 'minutes this week'], [p.exchanges_total, 'things you said to Juno'], [p.words_learned, 'new words and phrases']]
+    .forEach(([n, label]) => { const box = make('div', 'stat'); box.append(make('b', '', String(n)), make('span', '', label)); stats.append(box); });
+  el.append(stats);
+
+  el.append(make('p', 'notes-label', 'Minutes in class — last 7 days'));
+  const peak = Math.max(1, ...p.week.map((d) => d.minutes));
+  const bars = make('div', 'bars'), days = make('div', 'bar-days');
+  p.week.forEach((d, i) => {
+    const bar = make('div', 'bar' + (d.minutes ? (i === p.week.length - 1 ? ' today' : ' some') : ''));
+    bar.style.height = Math.max(4, Math.round((d.minutes / peak) * 100)) + '%';
+    bar.title = `${shortDate(d.date)}: ${d.minutes} min`;
+    bars.append(bar);
+    days.append(make('span', '', d.weekday.slice(0, 1)));
+  });
+  el.append(bars, days);
+
+  if (p.working_on.length) {
+    el.append(make('p', 'notes-label', 'What you are working on'));
+    const list = make('div', 'note-list');
+    p.working_on.forEach((w) => list.append(make('div', '', w)));
+    el.append(list);
+  }
+  if (p.recent_words.length) {
+    el.append(make('p', 'notes-label', 'Latest words and phrases'));
+    const list = make('div', 'note-list');
+    p.recent_words.forEach((w) => list.append(make('div', '', w)));
+    el.append(list);
+  }
+  if (p.recent.length) {
+    el.append(make('p', 'notes-label', 'Recent classes'));
+    p.recent.forEach((c) => {
+      const card = make('div', 'note-card');
+      card.append(make('p', 'meta', `${shortDate(c.date)} · ${MODE_NAMES[c.mode] || c.mode} · ${c.minutes} min`));
+      if (c.what_we_did) card.append(make('p', 'body', c.what_we_did));
+      el.append(card);
+    });
+  }
+  if (p.next_recommendation) {
+    const card = make('div', 'task-card');
+    card.append(make('p', 'eyebrow', 'Next focus'), make('h2', '', p.next_recommendation));
+    el.append(card);
+  }
+}
+
+$('progress-btn').onclick = async () => {
+  $('progress-btn').disabled = true;
+  $('start-error').textContent = '';
+  try {
+    const data = await api('/api/progress', {
+      student: $('student').value,
+      access_code: $('student-code').value,
+      tz_offset: new Date().getTimezoneOffset(),
+    }, { onWaking: () => setStatus('setup-status', 'Juno is waking up — this can take up to a minute…', 'waking') });
+    setStatus('setup-status', '');
+    renderProgress(data);
+    show('progress-screen');
+    window.scrollTo(0, 0);
+  } catch (e) {
+    setStatus('setup-status', '');
+    $('start-error').textContent = e.message;
+  } finally {
+    $('progress-btn').disabled = false;
+  }
+};
+$('progress-back').onclick = () => { show('setup-screen'); checkForUnfinishedClass(); };
+
 $('again-btn').onclick = () => { show('setup-screen'); checkForUnfinishedClass(); };
 
 $('feedback-btn').onclick = () => {
@@ -1568,6 +1678,9 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/abandon":
                 self._require_auth(session)
                 self._handle_abandon(session, data)
+            elif self.path == "/api/progress":
+                self._require_auth(session)
+                self._handle_progress(session, data)
             elif self.path == "/api/feedback":
                 self._require_auth(session)
                 self._handle_feedback(session, data)
@@ -1819,6 +1932,27 @@ class Handler(BaseHTTPRequestHandler):
             "updated_at": call["updated_at"],
             "transcript": call["transcript"][1:],  # drop the synthetic opener
         }})
+
+    def _handle_progress(self, session: dict, data: dict) -> None:
+        """The numbers behind the Progress screen. All of it is read from
+        saved classes and Juno's memory of the student - nothing is estimated."""
+        student = self._resolve_student(data)
+        try:
+            tz_offset = int(data.get("tz_offset") or 0)
+        except (TypeError, ValueError):
+            tz_offset = 0
+        numbers = store.progress_for(student["student_id"], tz_offset)
+        memory = tutor.load_student(student["student_id"])
+        words = memory.get("vocab_acquired_log") or []
+        numbers.update({
+            "name": student["display_name"],
+            "words_learned": len(words),
+            "recent_words": [w.split(" — ")[0] for w in words[-6:]][::-1],
+            "grammar_covered": (memory.get("grammar_covered") or [])[-5:][::-1],
+            "working_on": (memory.get("recurring_error_patterns") or [])[:5],
+            "next_recommendation": memory.get("next_recommendation") or "",
+        })
+        self._send_json(numbers)
 
     def _handle_end(self, session: dict, data: dict) -> None:
         # Accept an explicit call_id so a class can be closed and reported on

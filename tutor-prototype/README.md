@@ -228,6 +228,17 @@ no name, no key: a log carrying class content would be a second copy of the
 student's data somewhere nobody is guarding. Visible in Render's log viewer,
 and greppable for `"event": "turn"`.
 
+### The Progress screen
+
+"My progress" on the start screen shows a student their own numbers: classes,
+minutes in class, a 7-day chart, a streak, what they said, the words and
+phrases they picked up, what Juno says they are working on, and recent
+classes. Everything is read from saved classes and Juno's memory of the
+student - nothing is estimated. In particular there is no level score or
+per-skill rating, because Juno does not measure one. Minutes are the time
+between starting and ending a class (capped at 45), since speech itself is
+not timed. Days follow the student's own time zone.
+
 ## What this does and doesn't prove
 
 Proves: whether the correction tiers, level adaptation, and report format
