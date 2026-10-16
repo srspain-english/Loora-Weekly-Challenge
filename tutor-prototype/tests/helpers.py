@@ -63,6 +63,8 @@ def fake_report_response(report: dict | None = None):
         "updated_recurring_error_patterns": [],
         "next_recommendation": "Keep going.",
         "grammar_point_taught": "",
+        "skill_estimates": {"enough_evidence": True, "fluency": "B1", "grammar": "B1",
+                            "vocabulary": "B1", "understanding": "B2"},
     }
     response = mock.Mock()
     response.content = [block]

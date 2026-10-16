@@ -326,6 +326,20 @@ INDEX_HTML = """<!doctype html>
   .go{margin-left:auto;color:var(--muted);flex:none}
   #profile-card{margin-bottom:16px}
   #profile-change{margin:0 0 16px}
+  .level-card{background:#191714;color:#F6F2EA;border-radius:26px;padding:22px;margin-top:22px}
+  .level-card .row-bands{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:14px;font-weight:600}
+  .level-card .row-bands small{font-weight:400;font-size:12px;color:#A8A096;text-align:center}
+  .level-card .track{position:relative;height:10px;border-radius:5px;background:rgba(246,242,234,.14);margin-bottom:12px}
+  .level-card .fill{position:absolute;left:0;top:0;bottom:0;border-radius:5px;background:linear-gradient(90deg,#5B2BD6,#9B7CFF)}
+  .level-card .dot{position:absolute;top:-4px;width:18px;height:18px;border-radius:50%;background:#F6F2EA;border:4px solid #9B7CFF;transform:translateX(-50%)}
+  .level-card p{margin:0;font-size:13px;color:#C6BFB3;line-height:1.45}
+  .level-wait{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:18px;margin-top:22px;font-size:14px;line-height:1.5;color:var(--ink-soft)}
+  .skill{margin-bottom:16px}
+  .skill:last-child{margin-bottom:0}
+  .skill-head{display:flex;justify-content:space-between;font-size:14px;color:var(--ink);margin-bottom:7px}
+  .skill-head b{color:var(--accent)}
+  .skill-bar{height:6px;border-radius:3px;background:var(--surface-2)}
+  .skill-bar i{display:block;height:6px;border-radius:3px;background:var(--accent)}
   .note-open{display:block;width:100%;text-align:left;padding:16px 18px;font-family:inherit;font-weight:400;color:var(--ink);border-radius:20px}
   .tag{font-size:10px;text-transform:uppercase;color:var(--muted);font-family:ui-monospace,monospace}
 
@@ -364,7 +378,7 @@ INDEX_HTML = """<!doctype html>
     <p class="eyebrow" id="today-date"></p>
     <div class="hello-row">
       <h1 class="hello" id="hello">Hello</h1>
-      <button class="level-badge" id="level-badge" aria-label="Change your level"><b id="level-badge-text">B1</b><span>Level</span></button>
+      <button class="level-badge" id="level-badge" aria-label="Change your level"><b id="level-badge-text">B1</b><span id="level-badge-note">Level</span></button>
     </div>
 
     <div id="profile-card" class="panel" hidden>
@@ -1092,6 +1106,8 @@ async function checkForUnfinishedClass() {
     });
     const last = data.last_session;
     adoptServerName(data.name);
+    levelEstimate = data.level || null;
+    renderHello();
     $('last-time').hidden = !(last && (last.what_we_did || last.next_recommendation));
     if (last) {
       $('last-time-text').textContent = last.what_we_did || '';
@@ -1423,6 +1439,37 @@ function shortDate(iso) {
   return new Date(iso + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
 
+function levelPhrase(o) {
+  if (!o.next_band) return `${o.band}: the top of the scale`;
+  const f = o.fraction;
+  if (f < 0.15) return `Just into ${o.band}`;
+  if (f < 0.4) return `A third of the way to ${o.next_band}`;
+  if (f < 0.6) return `Halfway to ${o.next_band}`;
+  if (f < 0.85) return `Two thirds of the way to ${o.next_band}`;
+  return `Almost at ${o.next_band}`;
+}
+
+function renderLevel(el, level) {
+  if (!level || !level.ready) {
+    const have = level ? level.rated_classes : 0, need = level ? level.needed : 2;
+    el.append(make('div', 'level-wait', have
+      ? `Your level estimate appears after ${need} full classes. You have ${have} so far.`
+      : `Your level estimate appears after ${need} full classes. Juno needs to hear you speak a good while first.`));
+    return;
+  }
+  const o = level.overall;
+  const card = make('div', 'level-card');
+  const bands = make('div', 'row-bands');
+  bands.append(make('span', '', o.band), make('small', '', levelPhrase(o)), make('span', '', o.next_band || ''));
+  const track = make('div', 'track'), fill = make('div', 'fill'), dot = make('div', 'dot');
+  fill.style.width = Math.round(o.fraction * 100) + '%';
+  dot.style.left = Math.round(o.fraction * 100) + '%';
+  track.append(fill, dot);
+  const n = level.rated_classes;
+  card.append(bands, track, make('p', '', `Estimated by Juno from your last ${n} classes. A guide, not an exam result.`));
+  el.append(card);
+}
+
 function renderProgress(p) {
   const el = $('progress-body');
   el.innerHTML = '';
@@ -1441,6 +1488,8 @@ function renderProgress(p) {
     el.append(make('p', 'notes-summary', `${p.streak_days} days in a row. Keep it going.`));
   }
 
+  renderLevel(el, p.level);
+
   const stats = make('div', 'stat-row');
   [[p.minutes_week, 'minutes this week'], [p.exchanges_total, 'things you said to Juno'], [p.words_learned, 'new words and phrases']]
     .forEach(([n, label]) => { const box = make('div', 'stat'); box.append(make('b', '', String(n)), make('span', '', label)); stats.append(box); });
@@ -1457,6 +1506,23 @@ function renderProgress(p) {
     days.append(make('span', '', d.weekday.slice(0, 1)));
   });
   el.append(bars, days);
+
+  if (p.level && p.level.ready) {
+    el.append(make('p', 'notes-label', 'Your skills'));
+    const box = make('div', 'note-card');
+    p.level.skills.forEach((k) => {
+      const row = make('div', 'skill');
+      const head = make('div', 'skill-head');
+      head.append(make('span', '', k.label), make('b', '', k.band + (k.plus && k.next_band ? '+' : '')));
+      const bar = make('div', 'skill-bar'), fill = make('i');
+      fill.style.width = Math.round(((k.value - 1) / 6) * 100) + '%';
+      bar.append(fill);
+      row.append(head, bar);
+      box.append(row);
+    });
+    box.append(make('p', 'why', 'Each bar runs from A1 to C2.'));
+    el.append(box);
+  }
 
   if (p.working_on.length) {
     el.append(make('p', 'notes-label', 'What you are working on'));
@@ -1555,6 +1621,8 @@ function saveIdentity() {
   } catch (e) { /* private window: they will be asked again next time */ }
 }
 
+let levelEstimate = null;
+
 function renderHello() {
   const hour = new Date().getHours();
   const part = hour < 12 ? 'Good morning' : hour < 19 ? 'Good afternoon' : 'Good evening';
@@ -1562,7 +1630,8 @@ function renderHello() {
   hello.innerHTML = '';
   hello.append(part + ',', document.createElement('br'), make('i', '', $('student').value.trim() || 'welcome'));
   $('today-date').textContent = new Date().toLocaleDateString(undefined, { weekday: 'long' }) + ' · your practice space';
-  $('level-badge-text').textContent = $('level').value;
+  $('level-badge-text').textContent = levelEstimate || $('level').value;
+  $('level-badge-note').textContent = levelEstimate ? 'Estimated' : 'Level';
 }
 
 function showProfile(open) {
@@ -2114,11 +2183,12 @@ class Handler(BaseHTTPRequestHandler):
                     "next_recommendation": history[-1].get("next_recommendation")}
         call = store.open_call_for(student["student_id"])
         name = student["display_name"]
+        level = store.level_label(student["student_id"])
         if not call:
-            self._send_json({"open_call": None, "last_session": last, "name": name})
+            self._send_json({"open_call": None, "last_session": last, "name": name, "level": level})
             return
         session["call_id"] = call["call_id"]
-        self._send_json({"last_session": last, "name": name, "open_call": {
+        self._send_json({"last_session": last, "name": name, "level": level, "open_call": {
             "call_id": call["call_id"],
             "mode": call["mode"],
             "level": call["level"],

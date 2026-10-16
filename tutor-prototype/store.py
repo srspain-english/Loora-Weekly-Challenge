@@ -777,7 +777,8 @@ def progress_for(student_id: str, tz_offset_minutes: int = 0, today=None) -> dic
         local_day = (start - timedelta(minutes=tz_offset_minutes)).date()
         report = json.loads(r["report"]) if r["report"] else {}
         classes.append({"day": local_day, "minutes": minutes, "mode": r["mode"],
-                        "turns": r["turns"], "what_we_did": report.get("what_we_did") or ""})
+                        "turns": r["turns"], "what_we_did": report.get("what_we_did") or "",
+                        "report": report})
 
     if today is None:
         today = (datetime.now(timezone.utc) - timedelta(minutes=tz_offset_minutes)).date()
@@ -798,6 +799,7 @@ def progress_for(student_id: str, tz_offset_minutes: int = 0, today=None) -> dic
         d -= timedelta(days=1)
 
     return {
+        "level": skill_summary([c["report"] for c in classes]),
         "classes_total": len(classes),
         "minutes_total": round(sum(c["minutes"] for c in classes)),
         "minutes_week": sum(w["minutes"] for w in week),
@@ -829,3 +831,63 @@ def notes_for(student_id: str, limit: int = 30) -> list[dict]:
                       "started_at": r["started_at"], "minutes": round(minutes),
                       "report": json.loads(r["report"])})
     return notes
+
+
+# --- Level and skill estimates ----------------------------------------------
+# Each finished class's report carries Claude's CEFR rating of four skills.
+# One class is a noisy sample, so the Progress screen only shows an estimate
+# once there are a couple of well-evidenced classes, and then averages the
+# latest few. A rating of "B1" means somewhere inside B1, so it counts as the
+# middle of the band (3.5); averaging those is what places a student part of
+# the way to the next level.
+CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
+SKILLS = [("fluency", "Fluency"), ("grammar", "Grammar"),
+          ("vocabulary", "Vocabulary"), ("understanding", "Understanding")]
+MIN_RATED_CLASSES = 2
+RATED_WINDOW = 5
+
+
+def _band_of(value: float) -> dict:
+    index = min(len(CEFR_LEVELS), max(1, int(value)))
+    fraction = value - index if index < len(CEFR_LEVELS) else 0.0
+    return {
+        "band": CEFR_LEVELS[index - 1],
+        "next_band": CEFR_LEVELS[index] if index < len(CEFR_LEVELS) else None,
+        "fraction": round(fraction, 2),
+        "plus": fraction >= 0.5,
+        "value": round(value, 2),
+    }
+
+
+def skill_summary(reports: list[dict]) -> dict:
+    """Smooth the per-class skill ratings (oldest first) into one estimate."""
+    rated = []
+    for report in reports:
+        est = (report or {}).get("skill_estimates")
+        if not isinstance(est, dict) or est.get("enough_evidence") is not True:
+            continue
+        if all(est.get(key) in CEFR_LEVELS for key, _ in SKILLS):
+            rated.append(est)
+    rated = rated[-RATED_WINDOW:]
+    if len(rated) < MIN_RATED_CLASSES:
+        return {"ready": False, "rated_classes": len(rated), "needed": MIN_RATED_CLASSES}
+
+    skills = []
+    for key, label in SKILLS:
+        mean = sum(CEFR_LEVELS.index(e[key]) + 1.5 for e in rated) / len(rated)
+        skills.append({"key": key, "label": label, **_band_of(mean)})
+    overall = _band_of(sum(s["value"] for s in skills) / len(skills))
+    return {"ready": True, "rated_classes": len(rated), "overall": overall, "skills": skills}
+
+
+def level_label(student_id: str) -> str | None:
+    """"B1" or "B1+" for the Today badge, or None until there is an estimate."""
+    rows = connect().execute(
+        "SELECT report FROM calls WHERE student_id = ? AND status = 'ended'"
+        " AND report IS NOT NULL ORDER BY started_at DESC LIMIT 12", (student_id,)
+    ).fetchall()
+    summary = skill_summary([json.loads(r["report"]) for r in reversed(rows)])
+    if not summary["ready"]:
+        return None
+    overall = summary["overall"]
+    return overall["band"] + ("+" if overall["plus"] and overall["next_band"] else "")

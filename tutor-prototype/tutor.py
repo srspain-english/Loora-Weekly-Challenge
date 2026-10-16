@@ -450,12 +450,42 @@ REPORT_TOOL = {
                                 "target given in the system prompt, echoed back verbatim "
                                 "so it can be marked covered. Empty string in any other mode.",
             },
+            "skill_estimates": {
+                "type": "object",
+                "description": "A CEFR estimate of what the student actually did in THIS "
+                                "conversation, for their Progress screen. Judge the evidence "
+                                "on the page, not the level the class was aimed at, and not "
+                                "what the student might manage on a better day. Be "
+                                "conservative: when torn between two levels, choose the "
+                                "lower. Pronunciation is deliberately not rated - you only "
+                                "have text.",
+                "properties": {
+                    "enough_evidence": {
+                        "type": "boolean",
+                        "description": "False if the student said fewer than about six "
+                                        "substantial turns, mostly answered in single words, "
+                                        "or the class was cut short. The levels below are "
+                                        "then ignored.",
+                    },
+                    "fluency": {"type": "string", "enum": ["A1", "A2", "B1", "B2", "C1", "C2"],
+                                 "description": "Length and flow of what they said: full "
+                                                "developed answers versus fragments."},
+                    "grammar": {"type": "string", "enum": ["A1", "A2", "B1", "B2", "C1", "C2"],
+                                 "description": "Range and control of structures actually used."},
+                    "vocabulary": {"type": "string", "enum": ["A1", "A2", "B1", "B2", "C1", "C2"],
+                                    "description": "Range and precision of words they used."},
+                    "understanding": {"type": "string", "enum": ["A1", "A2", "B1", "B2", "C1", "C2"],
+                                       "description": "How well they understood Juno - "
+                                                      "relevant answers, few requests to repeat."},
+                },
+                "required": ["enough_evidence", "fluency", "grammar", "vocabulary", "understanding"],
+            },
         },
         "required": [
             "what_we_did", "corrections", "word_traps", "pronunciation",
             "vocabulary_learned", "what_went_well", "homework",
             "next_recommendation", "updated_recurring_error_patterns",
-            "grammar_point_taught",
+            "grammar_point_taught", "skill_estimates",
         ],
     },
 }
@@ -548,7 +578,9 @@ def generate_report(client: anthropic.Anthropic, transcript: list[dict]) -> dict
         max_tokens=4096,
         system="You are producing the Tutor Playbook §06 end-of-call report from the "
                "transcript of a call you just finished tutoring. Be specific and honest — "
-               "this report is read by the student and, eventually, by S&R Spain.",
+               "this report is read by the student and, eventually, by S&R Spain. The "
+               "skill_estimates feed a level shown to the student, so rate only what the "
+               "transcript shows, and lean low when unsure.",
         messages=report_request,
         tools=[REPORT_TOOL],
         tool_choice={"type": "tool", "name": "submit_session_report"},

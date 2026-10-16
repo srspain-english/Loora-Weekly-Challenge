@@ -238,14 +238,22 @@ name and personal code are asked once and remembered on that device.
 
 ### The Progress screen
 
-The Progress tab shows a student their own numbers: classes,
-minutes in class, a 7-day chart, a streak, what they said, the words and
-phrases they picked up, what Juno says they are working on, and recent
-classes. Everything is read from saved classes and Juno's memory of the
-student - nothing is estimated. In particular there is no level score or
-per-skill rating, because Juno does not measure one. Minutes are the time
+The Progress tab shows a student their own numbers: classes, minutes in class,
+a 7-day chart, a streak, what they said, the words and phrases they picked up,
+what Juno says they are working on, and recent classes. Minutes are the time
 between starting and ending a class (capped at 45), since speech itself is
 not timed. Days follow the student's own time zone.
+
+**Level and skills.** At the end of each class Juno rates four skills -
+fluency, grammar, vocabulary and understanding - on the CEFR scale, from
+what the transcript shows (not from the level the class was aimed at, and
+leaning low when unsure). One class is a noisy sample, so nothing is shown
+until two well-evidenced classes exist (a class with too little speech is
+ignored), and the estimate is the average of the latest five. A rating of "B1"
+counts as the middle of B1, which is what places a student part of the way to
+B2. It is labelled an estimate on screen and is not an exam result.
+Pronunciation is deliberately not rated: the browser only hands over text.
+Classes finished before this release carry no ratings and are skipped.
 
 ## What this does and doesn't prove
 
