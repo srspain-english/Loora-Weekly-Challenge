@@ -238,7 +238,20 @@ def stable_prefix(level: str) -> str:
     ])
 
 
-def dynamic_context(level: str, mode: str, scenario: dict | None, student: dict) -> str:
+# Opt-in from the student's Practice screen. It overrides the level rules'
+# register on purpose: a student who asks for this finds Juno's words too hard.
+EASIER_ENGLISH = (
+    "\nTHE STUDENT ASKED FOR EASIER ENGLISH. Whatever the level rules above say about "
+    "pace, idiom or vocabulary: use short sentences (about twelve words or fewer), the "
+    "most common everyday words, and no idioms or phrasal verbs unless one is today's "
+    "teaching target - and if you use one, explain it in plain words in the same reply. "
+    "Ask one simple question at a time. Never use a harder word when an easy one means "
+    "the same thing."
+)
+
+
+def dynamic_context(level: str, mode: str, scenario: dict | None, student: dict,
+                    easier: bool = False) -> str:
     """The per-student half: memory, scenario, this session's grammar point.
 
     Never marked cacheable. It changes per student and per call, so caching it
@@ -310,6 +323,8 @@ def dynamic_context(level: str, mode: str, scenario: dict | None, student: dict)
         "know that's coming — react to it naturally when it happens, per the session arc's "
         "closing step, then stop."
     )
+    if easier:
+        parts.append(EASIER_ENGLISH)
     return "\n".join(parts)
 
 
@@ -323,7 +338,7 @@ def build_system_prompt(level: str, mode: str, scenario: dict | None, student: d
 
 
 def build_system_blocks(level: str, mode: str, scenario: dict | None,
-                        student: dict) -> list[dict]:
+                        student: dict, easier: bool = False) -> list[dict]:
     """The system prompt as API blocks: cached prefix, then uncached context.
 
     Order matters. Caching matches on a prefix, so the stable half has to come
@@ -339,7 +354,7 @@ def build_system_blocks(level: str, mode: str, scenario: dict | None,
         },
         {
             "type": "text",
-            "text": dynamic_context(level, mode, scenario, student),
+            "text": dynamic_context(level, mode, scenario, student, easier),
         },
     ]
 

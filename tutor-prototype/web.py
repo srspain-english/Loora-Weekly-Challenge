@@ -249,6 +249,10 @@ INDEX_HTML = """<!doctype html>
   }
   .pill.light{background:#F4EEE4;color:#121722;border-color:transparent}
   .call-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;font-size:13px;color:var(--muted)}
+  .call-settings select{width:auto;padding:6px 10px;font-size:13px;border-radius:10px}
+  .call-settings{justify-content:space-between}
+  .check-row{display:flex;align-items:flex-start;gap:8px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink-soft);margin:0}
+  .check-row input{margin-top:2px;flex-shrink:0}
   .foot-toggles{display:flex;gap:16px;flex-wrap:wrap;justify-content:flex-end}
   .call-foot label{margin:0;text-transform:none;letter-spacing:0;font-size:13px;display:flex;align-items:center;gap:6px;cursor:pointer}
   .link{background:none;border:none;border-radius:0;padding:4px 0;color:var(--ink-soft);font-family:inherit;font-weight:500;font-size:13px;text-decoration:underline;text-underline-offset:3px}
@@ -456,6 +460,8 @@ INDEX_HTML = """<!doctype html>
       </div>
     </div>
 
+    <label class="check-row" style="margin-top:14px"><input type="checkbox" id="easier"> Easier English <span class="hint">— shorter sentences and simpler words from Juno</span></label>
+
     <div class="row" style="margin-top:18px">
       <button id="start-btn" style="flex:1">Begin conversation →</button>
     </div>
@@ -506,6 +512,14 @@ INDEX_HTML = """<!doctype html>
       <button class="pill" id="pause-btn">Pause</button>
       <button class="pill" id="help-btn">Help me</button>
       <button class="pill light" id="end-btn">End</button>
+    </div>
+    <div class="call-foot call-settings">
+      <label title="How fast Juno speaks">Speed
+        <select id="voice-speed"><option value="slow">Slow</option><option value="normal" selected>Normal</option><option value="fast">Fast</option></select>
+      </label>
+      <label title="How long Juno waits when you pause">Wait
+        <select id="patience"><option value="normal">4 seconds</option><option value="long">8 seconds</option><option value="tap">Until I tap</option></select>
+      </label>
     </div>
     <div class="call-foot">
       <button class="link" id="type-toggle">Type instead</button>
@@ -839,12 +853,33 @@ function pickVoice(voices) {
   return voices.find(isUsableVoice) || null;
 }
 
+const PREFS_KEY = 'juno_prefs';
+const VOICE_RATES = { slow: 0.75, normal: 0.9, fast: 1 };
+
+function loadPrefs() {
+  try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch (e) { return {}; }
+}
+function savePrefs() {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({
+      speed: $('voice-speed').value, wait: $('patience').value, easier: $('easier').checked,
+    }));
+  } catch (e) { /* private window: settings last until the tab closes */ }
+}
+(function restorePrefs() {
+  const saved = loadPrefs();
+  if (VOICE_RATES[saved.speed]) $('voice-speed').value = saved.speed;
+  if (['normal', 'long', 'tap'].includes(saved.wait)) $('patience').value = saved.wait;
+  $('easier').checked = !!saved.easier;
+  ['voice-speed', 'patience', 'easier'].forEach((id) => $(id).addEventListener('change', savePrefs));
+})();
+
 function speak(text) {
   if (!$('speak-toggle').checked || !window.speechSynthesis || paused) return false;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(speakable(text));
   u.lang = 'en-US';
-  u.rate = 1;
+  u.rate = VOICE_RATES[$('voice-speed').value] || VOICE_RATES.normal;
   u.pitch = 1;
   const voice = pickVoice(cachedVoices.length ? cachedVoices : window.speechSynthesis.getVoices());
   if (voice) u.voice = voice;
@@ -882,6 +917,15 @@ function setupVoiceInput() {
   const NOTHING_MS = 10000; // not a single word by then: stop quietly
   const END_MS = 1500;      // asked to stop but never ended: end it ourselves
   const MAX_MS = 60000;     // never listen longer than this
+  // How long Juno waits after the last word before deciding the student has
+  // finished. "Until I tap" never decides for them.
+  const PATIENCE = { normal: SILENCE_MS, long: 8000, tap: Infinity };
+  const patienceMs = () => PATIENCE[$('patience').value] || SILENCE_MS;
+  let carried = '';      // words from earlier pieces of the same answer
+  let lastWordAt = 0;
+  let stopping = false;  // we asked it to stop: do not stitch another piece on
+  let stitchedAt = 0;
+  let stitches = 0;
 
   const later = (ms, fn) => {
     const mine = attempt;
@@ -893,6 +937,7 @@ function setupVoiceInput() {
     clearTimeout(silenceTimer);
   };
   const askToStop = () => {
+    stopping = true;
     try { recognition.stop(); } catch (err) { /* already stopped */ }
     later(END_MS, () => finish());
   };
@@ -901,11 +946,13 @@ function setupVoiceInput() {
     if (!micBusy) return;
     micBusy = false;
     recognitionActive = false;
+    stopping = true;
     clearTimers();
     $('heard').textContent = '';
     if (paused) { idleOrb(); return; }
     const said = heard.trim();
     heard = '';
+    carried = '';
     const problem = voiceError || reason;
     if (!said && problem && problem !== 'aborted' && attemptAuto) {
       // A hands-free attempt that came to nothing stays quiet; the student
@@ -942,7 +989,9 @@ function setupVoiceInput() {
     if (!micBusy) return;
     micBusy = false;
     recognitionActive = false;
+    stopping = true;
     heard = '';
+    carried = '';
     clearTimers();
     $('heard').textContent = '';
     try { recognition.abort(); } catch (err) { /* already stopped */ }
@@ -972,6 +1021,10 @@ function setupVoiceInput() {
     attemptAuto = auto;
     voiceError = null;
     heard = '';
+    carried = '';
+    stopping = false;
+    stitches = 0;
+    stitchedAt = 0;
     $('heard').textContent = '';
     // Respond straight away, before the browser confirms it is listening.
     setOrb('listening', auto ? 'Listening… just speak' : 'Starting the microphone…');
@@ -1021,14 +1074,44 @@ function setupVoiceInput() {
     recognitionActive = true;
     let text = '';
     for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
-    heard = text;
-    $('heard').textContent = text;
-    if (text.trim()) setOrb('listening', 'Listening… tap when you’re done');
+    heard = carried ? carried + ' ' + text : text;
+    $('heard').textContent = heard;
+    if (text.trim()) { lastWordAt = Date.now(); setOrb('listening', 'Listening… tap when you’re done'); }
     clearTimeout(silenceTimer);
-    silenceTimer = setTimeout(() => { if (micBusy) askToStop(); }, SILENCE_MS);
+    const wait = patienceMs();
+    if (Number.isFinite(wait)) silenceTimer = setTimeout(() => { if (micBusy) askToStop(); }, wait);
   };
   recognition.onerror = (e) => { voiceError = e.error; };
-  recognition.onend = () => finish();
+  // Safari and iPhone end listening by themselves at the first short pause.
+  // If the student has been talking, the browser stopping is not the end of
+  // their answer: start listening again, keep what was heard, and let the
+  // wait time decide. If the browser refuses to restart, what was heard so
+  // far is sent, which is how it always worked.
+  function stitch() {
+    const now = Date.now();
+    // An engine that keeps ending at once with nothing new is not going to
+    // work; send what there is rather than spin.
+    if ((now - stitchedAt < 700 && heard.trim() === carried) || stitches >= 40) { finish(); return; }
+    stitchedAt = now;
+    stitches += 1;
+    recognitionActive = false;
+    carried = heard.trim();
+    voiceError = null;
+    clearTimeout(silenceTimer);
+    const wait = patienceMs() - (now - lastWordAt);
+    if (Number.isFinite(wait)) {
+      if (wait <= 0) { finish(); return; }
+      silenceTimer = setTimeout(() => { if (micBusy) askToStop(); }, wait);
+    }
+    try { recognition.start(); } catch (err) { finish(); return; }
+    later(START_MS, () => { if (!recognitionActive) finish(); });
+  }
+
+  recognition.onend = () => {
+    const fatal = voiceError && !['no-speech', 'aborted'].includes(voiceError);
+    if (micBusy && !stopping && !paused && !fatal && heard.trim()) { stitch(); return; }
+    finish();
+  };
 }
 
 // --- Pause and Help me -----------------------------------------------------
@@ -1231,6 +1314,7 @@ $('start-btn').onclick = async () => {
       level: $('level').value,
       scenario_id: choice.startsWith('pack:') ? null : (choice || null),
       pack: choice.startsWith('pack:') ? choice.slice(5) : null,
+      easier: $('easier').checked,
     }, { onWaking: () => setStatus('setup-status',
         'Juno is waking up — this takes up to a minute after a quiet spell.',
         'waking') });
@@ -2085,7 +2169,8 @@ class Handler(BaseHTTPRequestHandler):
 
         # The cached half depends only on the level; the student's memory and
         # the scenario go in the uncached half.
-        system_blocks = tutor.build_system_blocks(level, mode, scenario, memory)
+        system_blocks = tutor.build_system_blocks(level, mode, scenario, memory,
+                                                  easier=bool(data.get("easier")))
         messages = [{"role": "user", "content": "(the call has just connected — open it)"}]
 
         call_id = store.create_call(

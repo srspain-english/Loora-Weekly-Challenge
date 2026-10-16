@@ -36,3 +36,22 @@ class TurnTakingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EasierEnglishTest(unittest.TestCase):
+    """A student who finds Juno's words too hard can ask for simpler ones."""
+
+    def test_the_request_reaches_the_prompt_only_when_made(self) -> None:
+        student = {"student_id": "x", "name": "X", "cefr_level": "B1"}
+        plain = tutor.dynamic_context("B1", "free", None, student)
+        easier = tutor.dynamic_context("B1", "free", None, student, easier=True)
+        self.assertNotIn("EASIER ENGLISH", plain)
+        self.assertIn("EASIER ENGLISH", easier)
+        self.assertIn("no idioms or phrasal verbs", easier)
+
+    def test_it_never_touches_the_cached_half_of_the_prompt(self) -> None:
+        student = {"student_id": "x", "name": "X", "cefr_level": "B1"}
+        a = tutor.build_system_blocks("B1", "free", None, student)
+        b = tutor.build_system_blocks("B1", "free", None, student, easier=True)
+        self.assertEqual(a[0], b[0])
+        self.assertNotEqual(a[1], b[1])

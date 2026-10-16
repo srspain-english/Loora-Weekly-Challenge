@@ -182,6 +182,25 @@ class PageTest(ServerTestCase, unittest.TestCase):
             result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_students_who_pause_a_lot_can_make_juno_wait(self) -> None:
+        # Reported: "I do many pauses and Juno won't let me finish." Safari and
+        # iPhone end listening at the first pause, so the pieces are stitched
+        # together; the wait itself is the student's to choose.
+        self.assertIn('id="patience"', self.html)
+        self.assertIn("tap: Infinity", self.html)
+        self.assertIn("function stitch()", self.html)
+        self.assertIn("recognition.onend = () => {", self.html)
+
+    def test_juno_speaks_slower_by_default_and_the_speed_is_the_students(self) -> None:
+        self.assertIn('id="voice-speed"', self.html)
+        self.assertIn("normal: 0.9", self.html)
+        self.assertIn("u.rate = VOICE_RATES[$('voice-speed').value]", self.html)
+        self.assertNotIn("u.rate = 1;", self.html)
+
+    def test_students_can_ask_for_easier_english(self) -> None:
+        self.assertIn('id="easier"', self.html)
+        self.assertIn("easier: $('easier').checked", self.html)
+
     def test_has_four_tabs_each_with_a_screen(self) -> None:
         for tab, screen in (("today", "today-screen"), ("practice", "practice-screen"),
                             ("progress", "progress-screen"), ("notes", "notes-screen")):

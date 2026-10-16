@@ -228,6 +228,18 @@ no name, no key: a log carrying class content would be a second copy of the
 student's data somewhere nobody is guarding. Visible in Render's log viewer,
 and greppable for `"event": "turn"`.
 
+### Pauses, speed and easier English
+
+Three things a student can change for themselves, remembered on their device:
+**Wait** (in class: 4 seconds, 8 seconds, or until they tap) controls how long
+Juno waits after their last word before answering. Safari and iPhone end
+listening at the first short pause, so Juno restarts listening and joins the
+pieces into one answer; if the browser refuses to restart, what was heard is
+sent, as before. **Speed** (in class) sets how fast Juno's voice speaks
+(default is a little slower than the browser's normal). **Easier English** (on
+the Practice screen) tells Juno to use short sentences, the commonest words and
+no idioms for that class.
+
 ### The screens
 
 Four tabs along the bottom: **Today** (greeting, the three ways to talk, the

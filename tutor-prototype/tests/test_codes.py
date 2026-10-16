@@ -110,6 +110,14 @@ class CodesTest(ServerTestCase, unittest.TestCase):
         self.assertEqual(history[0]["next_recommendation"], "Keep going.")
         self.assertNotEqual(second["call_id"], first["call_id"])
 
+    def test_an_easier_english_request_is_kept_in_that_classes_prompt(self) -> None:
+        store.create_student("Diego", access_code="DIEGO-3333")
+        with mock.patch.object(web.client.messages, "create", side_effect=create):
+            _, plain = self.post("/api/start", {"mode": "free", "access_code": "DIEGO-3333"})
+            _, easy = self.post("/api/start", {"mode": "free", "access_code": "DIEGO-3333", "easier": True})
+        self.assertNotIn("EASIER ENGLISH", store.get_call(plain["call_id"])["system"])
+        self.assertIn("EASIER ENGLISH", store.get_call(easy["call_id"])["system"])
+
     def test_a_class_with_nothing_in_it_is_just_dropped(self) -> None:
         sid = store.create_student("Pilar", access_code="PILAR-2222")
         with mock.patch.object(web.client.messages, "create", side_effect=create):
