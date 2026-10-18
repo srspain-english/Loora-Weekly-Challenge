@@ -38,6 +38,7 @@ import time
 import traceback
 import webbrowser
 from datetime import datetime, timezone
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import anthropic
@@ -77,12 +78,52 @@ HELP_SYSTEM = (
 # overwrite each other's calls.
 SESSIONS: dict[str, dict] = {}
 
+# Juno as an installable web app ("Add to Home Screen"). The service worker is
+# deliberately empty of caching: a class must never be served from a stale copy.
+# It exists because phones only offer installation, and later notifications,
+# to pages that have one.
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+STATIC_FILES = {
+    "/icons/icon-192.png": ("icon-192.png", "image/png"),
+    "/icons/icon-512.png": ("icon-512.png", "image/png"),
+    "/icons/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
+    "/favicon.ico": ("icon-192.png", "image/png"),
+}
+MANIFEST = {
+    "name": "Juno · S&R Spain",
+    "short_name": "Juno",
+    "description": "Your English practice space.",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#F6F2EA",
+    "theme_color": "#F6F2EA",
+    "icons": [
+        {"src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+        {"src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+        {"src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+    ],
+}
+SERVICE_WORKER = """// Juno service worker: makes Juno installable. It keeps nothing offline.
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', () => {});
+"""
+
 INDEX_HTML = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#F6F2EA">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Juno">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Juno Teaching Assistant</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif&display=swap');
@@ -411,6 +452,15 @@ INDEX_HTML = """<!doctype html>
     <h2>Last time</h2>
     <p id="last-time-text"></p>
     <p id="last-time-next" style="margin-top:6px"></p>
+    </div>
+
+    <div id="install-card" class="notice" hidden>
+      <h2>Keep Juno on your phone</h2>
+      <p id="install-text"></p>
+      <div class="row">
+        <button id="install-btn" hidden>Install</button>
+        <button class="ghost" id="install-dismiss">Not now</button>
+      </div>
     </div>
 
     <p class="notes-label" style="margin-top:8px">Talk with Juno</p>
@@ -898,6 +948,46 @@ $('speak-toggle').onchange = () => {
   if (!$('speak-toggle').checked && window.speechSynthesis) window.speechSynthesis.cancel();
 };
 
+// --- Installing Juno on the home screen ----------------------------------------
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); });
+}
+const IS_IPHONE = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IS_STANDALONE = window.navigator.standalone === true
+  || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+// Safari's speech recognition has been unreliable inside a home-screen icon.
+const STANDALONE_NOTE = IS_IPHONE && IS_STANDALONE
+  ? ' On iPhone, voice may not work inside the home-screen icon. Open Juno in Safari to talk, or type.' : '';
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; showInstallCard(); });
+
+function showInstallCard() {
+  let dismissed = false;
+  try { dismissed = localStorage.getItem('juno_install_dismissed') === '1'; } catch (e) { dismissed = false; }
+  if (IS_STANDALONE || dismissed) return;
+  if (installPrompt) {
+    $('install-text').textContent = 'Open Juno like an app, straight from your home screen.';
+    $('install-btn').hidden = false;
+  } else if (IS_IPHONE) {
+    $('install-text').textContent = 'Tap the Share button at the bottom of your screen, then “Add to Home Screen”.';
+  } else {
+    return;
+  }
+  $('install-card').hidden = false;
+}
+$('install-btn').onclick = async () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  try { await installPrompt.userChoice; } catch (e) { /* closed without choosing */ }
+  installPrompt = null;
+  $('install-card').hidden = true;
+};
+$('install-dismiss').onclick = () => {
+  $('install-card').hidden = true;
+  try { localStorage.setItem('juno_install_dismissed', '1'); } catch (e) { /* asked again next visit */ }
+};
+
 let voiceSetUp = false;
 function setupVoiceInput() {
   if (voiceSetUp) return;
@@ -976,7 +1066,7 @@ function setupVoiceInput() {
         'network': 'Voice input needs an internet connection. Type instead.',
         'no-start': "The microphone didn't start in this browser. Check it is allowed to use the microphone, or type instead.",
       }[problem] || 'Voice input did not work. Type instead.';
-      setStatus('chat-status', `${why} (${problem})`, 'offline');
+      setStatus('chat-status', `${why} (${problem})${STANDALONE_NOTE}`, 'offline');
       if (problem !== 'no-speech') openTyping();
       return;
     }
@@ -1007,7 +1097,7 @@ function setupVoiceInput() {
     if (paused || sending) return;
     if (!recognition) {
       openTyping();
-      setStatus('chat-status', "Voice isn't available in this browser. Type your answer instead.", 'offline');
+      setStatus('chat-status', "Voice isn't available in this browser. Type your answer instead." + STANDALONE_NOTE, 'offline');
       return;
     }
     if (micBusy) { askToStop(); return; }  // tap again to stop
@@ -1255,6 +1345,7 @@ function afterAuth() {
   $('lede').textContent = 'A live practice call, corrected as you go.';
   $('feedback-btn').style.display = 'inline-block';
   restoreIdentity();
+  showInstallCard();
   show('today-screen');
   checkForUnfinishedClass();
   fetch('/scenarios.json', { credentials: 'same-origin' }).then((r) => r.json()).then((data) => {
@@ -2063,6 +2154,13 @@ class Handler(BaseHTTPRequestHandler):
             self._send_bytes(INDEX_HTML.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path == "/admin" and ADMIN_CODE:
             self._send_bytes(ADMIN_HTML.encode("utf-8"), "text/html; charset=utf-8")
+        elif self.path == "/manifest.webmanifest":
+            self._send_bytes(json.dumps(MANIFEST).encode("utf-8"), "application/manifest+json")
+        elif self.path == "/sw.js":
+            self._send_bytes(SERVICE_WORKER.encode("utf-8"), "text/javascript; charset=utf-8")
+        elif self.path in STATIC_FILES:
+            name, content_type = STATIC_FILES[self.path]
+            self._send_bytes((STATIC_DIR / name).read_bytes(), content_type)
         elif self.path == "/scenarios.json":
             self._send_bytes(tutor.SCENARIOS_PATH.read_bytes(), "application/json")
         else:

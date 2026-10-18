@@ -255,6 +255,17 @@ teacher types them (with country code), and mentioned in the students'
 privacy notice. `JUNO_PUBLIC_URL` sets the link used inside messages; by
 default it is the address the teacher page was opened from.
 
+### Installing Juno on a phone
+
+Juno is an installable web app: a manifest (`/manifest.webmanifest`), icons
+(`static/`, drawn from `static/icon.svg`) and a service worker (`/sw.js`) let a
+phone offer "Add to Home Screen" (Share, then Add to Home Screen on iPhone;
+an Install button on Android and desktop Chrome). The service worker caches
+nothing, so a class is never served from a stale copy. It is also the first
+step towards push notifications. Known risk: speech recognition may not work
+inside the iPhone home-screen icon; the page says so and points the student
+to Safari or typing.
+
 ### The screens
 
 Four tabs along the bottom: **Today** (greeting, the three ways to talk, the
