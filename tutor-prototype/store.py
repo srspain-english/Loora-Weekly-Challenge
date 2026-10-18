@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import sqlite3
 import threading
@@ -291,6 +292,16 @@ def _ensure_columns(conn) -> None:
         "phone": "TEXT",                       # WhatsApp number, only if the teacher was given one
         "last_reminded_at": "TEXT",
         "reminders_paused": "INTEGER NOT NULL DEFAULT 0",
+        # Email reminders the student asked for themselves. email_state is
+        # '' (never asked), 'pending' (asked, not yet confirmed from the
+        # email), 'on', or 'stopped' (unsubscribed).
+        "email": "TEXT",
+        "email_state": "TEXT NOT NULL DEFAULT ''",
+        "remind_hour": "INTEGER",              # the student's own local hour, 0-23
+        "tz_offset": "INTEGER",                # minutes, as the browser's getTimezoneOffset()
+        "reminder_token": "TEXT",              # lets confirm / unsubscribe links work without a login
+        "email_consent_at": "TEXT",
+        "reminders_sent": "INTEGER NOT NULL DEFAULT 0",
     }
     if using_postgres():
         rows = conn.execute("SELECT column_name FROM information_schema.columns"
@@ -948,39 +959,113 @@ def set_reminders_paused(student_id: str, paused: bool) -> None:
     conn.commit()
 
 
-def mark_reminded(student_id: str) -> None:
+def mark_reminded(student_id: str, at: datetime | None = None) -> None:
     conn = connect()
-    conn.execute("UPDATE students SET last_reminded_at = ? WHERE student_id = ?", (_now(), student_id))
+    stamp = at.isoformat(timespec="seconds") if at else _now()
+    conn.execute("UPDATE students SET last_reminded_at = ?, reminders_sent = reminders_sent + 1"
+                 " WHERE student_id = ?", (stamp, student_id))
     conn.commit()
 
 
-def students_overview(tz_offset_minutes: int = 0, today=None) -> list[dict]:
-    """Every student with the facts a reminder depends on."""
+def _facts_for_row(r, tz_offset_minutes: int, today=None) -> dict:
+    """The facts a reminder depends on, in the student's (or teacher's) own day."""
     from datetime import date, timedelta
 
+    tz_offset_minutes = max(-840, min(840, int(tz_offset_minutes)))
+    progress = progress_for(r["student_id"], tz_offset_minutes, today)
+    today_day = date.fromisoformat(progress["today"])
+    last = progress["recent"][0]["date"] if progress["recent"] else None
+    reminded = _parse_time(r["last_reminded_at"])
+    reminded_ago = None
+    if reminded:
+        local = (reminded - timedelta(minutes=tz_offset_minutes)).date()
+        reminded_ago = (today_day - local).days
+    return {
+        "student_id": r["student_id"], "display_name": r["display_name"],
+        "access_code": r["access_code"], "phone": r["phone"],
+        "email": r["email"], "email_state": r["email_state"] or "", "remind_hour": r["remind_hour"],
+        "reminders_sent": r["reminders_sent"],
+        "paused": bool(r["reminders_paused"]),
+        "classes": progress["classes_total"], "streak_days": progress["streak_days"],
+        "minutes_week": progress["minutes_week"], "today": progress["today"],
+        "last_class_day": last,
+        "days_since_last": (today_day - date.fromisoformat(last)).days if last else None,
+        "reminded_ago_days": reminded_ago,
+        "level": level_label(r["student_id"]),
+    }
+
+
+_FACT_COLUMNS = ("student_id, display_name, access_code, phone, last_reminded_at, reminders_paused,"
+                 " email, email_state, remind_hour, tz_offset, reminders_sent")
+
+
+def students_overview(tz_offset_minutes: int = 0, today=None) -> list[dict]:
+    """Every student with the facts a reminder depends on, for the teacher."""
     rows = connect().execute(
-        "SELECT student_id, display_name, access_code, phone, last_reminded_at, reminders_paused"
-        " FROM students ORDER BY last_seen_at DESC"
-    ).fetchall()
-    out = []
-    for r in rows:
-        progress = progress_for(r["student_id"], tz_offset_minutes, today)
-        today_day = date.fromisoformat(progress["today"])
-        last = progress["recent"][0]["date"] if progress["recent"] else None
-        reminded = _parse_time(r["last_reminded_at"])
-        reminded_ago = None
-        if reminded:
-            local = (reminded - timedelta(minutes=max(-840, min(840, int(tz_offset_minutes))))).date()
-            reminded_ago = (today_day - local).days
-        out.append({
-            "student_id": r["student_id"], "display_name": r["display_name"],
-            "access_code": r["access_code"], "phone": r["phone"],
-            "paused": bool(r["reminders_paused"]),
-            "classes": progress["classes_total"], "streak_days": progress["streak_days"],
-            "minutes_week": progress["minutes_week"], "today": progress["today"],
-            "last_class_day": last,
-            "days_since_last": (today_day - date.fromisoformat(last)).days if last else None,
-            "reminded_ago_days": reminded_ago,
-            "level": level_label(r["student_id"]),
-        })
-    return out
+        f"SELECT {_FACT_COLUMNS} FROM students ORDER BY last_seen_at DESC").fetchall()
+    return [_facts_for_row(r, tz_offset_minutes, today) for r in rows]
+
+
+# --- Email reminders the student asked for -----------------------------------
+
+def normalise_email(raw: str) -> str:
+    text = (raw or "").strip().lower()
+    if not text:
+        return ""
+    if len(text) > 254 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", text):
+        raise ValueError("That email address does not look right.")
+    return text
+
+
+def save_reminder_settings(student_id: str, email: str, hour: int, tz_offset: int) -> dict:
+    """Record what the student chose. A new or changed address must be confirmed
+    from the email before anything is sent to it."""
+    email = normalise_email(email)
+    if not email:
+        raise ValueError("Type your email address.")
+    hour = int(hour)
+    if not 0 <= hour <= 23:
+        raise ValueError("Choose an hour of the day.")
+    tz_offset = max(-840, min(840, int(tz_offset)))
+    conn = connect()
+    row = conn.execute("SELECT email, email_state, reminder_token FROM students WHERE student_id = ?",
+                       (student_id,)).fetchone()
+    token = row["reminder_token"] or secrets.token_urlsafe(24)
+    same = row["email"] == email and row["email_state"] == "on"
+    state = "on" if same else "pending"
+    conn.execute(
+        "UPDATE students SET email = ?, email_state = ?, remind_hour = ?, tz_offset = ?,"
+        " reminder_token = ? WHERE student_id = ?",
+        (email, state, hour, tz_offset, token, student_id))
+    conn.commit()
+    return {"email": email, "state": state, "hour": hour, "token": token}
+
+
+def reminder_settings(student_id: str) -> dict:
+    row = connect().execute(
+        "SELECT email, email_state, remind_hour FROM students WHERE student_id = ?",
+        (student_id,)).fetchone()
+    return {"email": row["email"] or "", "state": row["email_state"] or "",
+            "hour": row["remind_hour"]} if row else {"email": "", "state": "", "hour": None}
+
+
+def student_by_reminder_token(token: str) -> dict | None:
+    if not token or len(token) < 20:
+        return None
+    row = connect().execute("SELECT student_id FROM students WHERE reminder_token = ?", (token,)).fetchone()
+    return get_student(row["student_id"]) if row else None
+
+
+def set_email_state(student_id: str, state: str) -> None:
+    conn = connect()
+    consent = _now() if state == "on" else None
+    conn.execute(
+        "UPDATE students SET email_state = ?, email_consent_at = COALESCE(?, email_consent_at)"
+        " WHERE student_id = ?", (state, consent, student_id))
+    conn.commit()
+
+
+def students_with_email_on() -> list[dict]:
+    rows = connect().execute(
+        f"SELECT {_FACT_COLUMNS} FROM students WHERE email_state = 'on' AND email IS NOT NULL").fetchall()
+    return [dict(r) for r in rows]

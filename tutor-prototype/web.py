@@ -38,11 +38,14 @@ import time
 import traceback
 import webbrowser
 from datetime import datetime, timezone
+from html import escape as html_escape
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import anthropic
 
+import autoreminders  # the daily run that emails students who asked for it
+import emailer  # sending those emails
 import reminders  # what to say to a student who has gone quiet
 import store  # identity, limits, saved calls, cost metrics
 import tutor  # the exact tested logic: prompts, tiers, report schema
@@ -77,6 +80,10 @@ HELP_SYSTEM = (
 # global dict (fine for one local user) would let concurrent students
 # overwrite each other's calls.
 SESSIONS: dict[str, dict] = {}
+
+# When a confirmation email last went to each student, so the form cannot be
+# used to send someone a stream of emails.
+REMINDER_CONFIRM_SENT: dict[str, float] = {}
 
 # Juno as an installable web app ("Add to Home Screen"). The service worker is
 # deliberately empty of caching: a class must never be served from a stale copy.
@@ -370,7 +377,7 @@ INDEX_HTML = """<!doctype html>
   #today-screen .mode-card[data-mode="free"] .d{color:#C6BFB3}
   #today-screen .mode-card[data-mode="free"] .ico{background:var(--accent);color:#fff}
   .go{margin-left:auto;color:var(--muted);flex:none}
-  #profile-card{margin-bottom:16px}
+  #profile-card, #email-card{margin-bottom:16px}
   #profile-change{margin:0 0 16px}
   .level-card{background:#191714;color:#F6F2EA;border-radius:26px;padding:22px;margin-top:22px}
   .level-card .row-bands{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:14px;font-weight:600}
@@ -463,6 +470,22 @@ INDEX_HTML = """<!doctype html>
       </div>
     </div>
 
+    <div id="email-card" class="panel" hidden>
+      <strong id="email-title">Practice reminders by email</strong>
+      <p class="hint" style="margin:6px 0 0">One short email a day at the hour you choose, only on days you have not practised, Monday to Friday. You can stop any time.</p>
+      <label for="email-address">Your email</label>
+      <input type="text" id="email-address" inputmode="email" autocomplete="email" placeholder="you@example.com">
+      <label for="email-hour">Hour</label>
+      <select id="email-hour"></select>
+      <label class="check-row" style="margin-top:14px"><input type="checkbox" id="email-consent"> Yes, send me practice reminders by email.</label>
+      <div class="row" style="margin-top:14px">
+        <button id="email-save">Turn on reminders</button>
+        <button class="ghost" id="email-stop" hidden>Stop reminders</button>
+      </div>
+      <div class="error" id="email-error"></div>
+      <div class="status" style="justify-content:flex-start" id="email-status"></div>
+    </div>
+
     <p class="notes-label" style="margin-top:8px">Talk with Juno</p>
     <button class="mode-card" data-mode="free"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span><span><b>Free talk</b><span class="d">Talk about anything. Juno follows you.</span></span><svg class="go" width="8" height="13" viewBox="0 0 8 13" aria-hidden="true"><path d="M1 1l6 5.5L1 12" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></button>
     <button class="mode-card" data-mode="business"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M8.5 7V4.5h7V7"/></svg></span><span><b>Business English</b><span class="d">Real work moments: meetings, updates, emails.</span></span><svg class="go" width="8" height="13" viewBox="0 0 8 13" aria-hidden="true"><path d="M1 1l6 5.5L1 12" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></button>
@@ -476,6 +499,7 @@ INDEX_HTML = """<!doctype html>
           <li><b>What it is for:</b> so Juno remembers you between classes and does not repeat what you already know. Nothing else.</li>
           <li><b>Who can see it:</b> you, and your teacher at S&amp;R Spain. It is not shared with anyone else and is not used to train anything.</li>
           <li><b>Please do not type confidential information</b> — real client names, personal data about colleagues, anything under NDA. Practise with the situation, not the specifics.</li>
+          <li><b>Your email:</b> only if you ask for reminders. It is used for those reminders and nothing else, and every email has a link to stop them.</li>
           <li><b>Your phone number:</b> only if you gave it to your teacher. They use it to send you practice reminders on WhatsApp, nothing else. Ask and it is removed.</li>
           <li><b>To have your data deleted:</b> ask your teacher and it is removed.</li>
         </ul>
@@ -1282,6 +1306,7 @@ async function checkForUnfinishedClass() {
     const last = data.last_session;
     adoptServerName(data.name);
     levelEstimate = data.level || null;
+    showReminders(data.reminders);
     renderHello();
     $('last-time').hidden = !(last && (last.what_we_did || last.next_recommendation));
     if (last) {
@@ -1800,6 +1825,61 @@ function saveIdentity() {
 
 let levelEstimate = null;
 
+// --- Practice reminders by email (only offered once the teacher has set it up) ---
+(function fillHours() {
+  const select = $('email-hour');
+  for (let h = 6; h <= 22; h++) {
+    const opt = document.createElement('option');
+    opt.value = String(h);
+    opt.textContent = String(h).padStart(2, '0') + ':00';
+    if (h === 18) opt.selected = true;
+    select.append(opt);
+  }
+})();
+
+function showReminders(r) {
+  if (!r || !r.available) { $('email-card').hidden = true; return; }
+  $('email-card').hidden = false;
+  if (r.email && !$('email-address').value) $('email-address').value = r.email;
+  if (r.hour !== null && r.hour !== undefined) $('email-hour').value = String(r.hour);
+  const messages = {
+    on: 'Reminders are on.',
+    pending: 'We sent you an email. Open it and press the link to turn reminders on.',
+    stopped: 'Reminders are off.',
+  };
+  $('email-status').textContent = messages[r.state] || '';
+  $('email-stop').hidden = !(r.state === 'on' || r.state === 'pending');
+  $('email-consent').checked = r.state === 'on';
+  $('email-save').textContent = r.state === 'on' ? 'Save changes' : 'Turn on reminders';
+}
+
+$('email-save').onclick = async () => {
+  $('email-error').textContent = '';
+  if (!$('email-consent').checked) { $('email-error').textContent = 'Tick the box to turn reminders on.'; return; }
+  $('email-save').disabled = true;
+  try {
+    const data = await api('/api/reminders', {
+      student: $('student').value, access_code: $('student-code').value,
+      email: $('email-address').value, hour: $('email-hour').value,
+      tz_offset: new Date().getTimezoneOffset(),
+    });
+    showReminders({ available: true, email: data.email, hour: data.hour, state: data.state });
+  } catch (e) {
+    $('email-error').textContent = e.message;
+  } finally {
+    $('email-save').disabled = false;
+  }
+};
+$('email-stop').onclick = async () => {
+  $('email-error').textContent = '';
+  try {
+    await api('/api/reminders', { student: $('student').value, access_code: $('student-code').value, action: 'stop' });
+    showReminders({ available: true, email: $('email-address').value, hour: Number($('email-hour').value), state: 'stopped' });
+  } catch (e) {
+    $('email-error').textContent = e.message;
+  }
+};
+
 function renderHello() {
   const hour = new Date().getHours();
   const part = hour < 12 ? 'Good morning' : hour < 19 ? 'Good afternoon' : 'Good evening';
@@ -1889,6 +1969,18 @@ $('feedback-submit').onclick = async () => {
 """
 
 
+def _notice_page(title: str, message: str, site_url: str) -> bytes:
+    """The page a student lands on from a link in an email."""
+    link = f'<p><a href="{html_escape(site_url)}">Abrir Juno</a></p>' if site_url else ""
+    return (f"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
+<title>{html_escape(title)}</title></head>
+<body style="margin:0;background:#F6F2EA;font-family:system-ui,sans-serif;color:#191714">
+<div style="max-width:460px;margin:12vh auto;padding:0 22px">
+<h1 style="font-weight:600;font-size:26px">{html_escape(title)}</h1>
+<p style="line-height:1.5">{html_escape(message)}</p>{link}</div></body></html>""").encode("utf-8")
+
+
 ADMIN_HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1935,6 +2027,12 @@ ADMIN_HTML = """<!doctype html>
     <strong style="color:#F6F2EA">New student</strong>
     <div class="row"><input id="new-name" placeholder="First name"><input id="new-phone" placeholder="WhatsApp, with country code (optional)"><button id="create">Create code</button></div>
     <div id="created"></div>
+  </div>
+  <div class="panel">
+    <strong style="color:#F6F2EA">Email reminders</strong>
+    <p class="muted" style="margin:6px 0 0">Students who turned them on get one automatically, on weekdays, at their own hour. This button runs the check now instead of waiting for the timer.</p>
+    <div class="row"><button class="ghost" id="run-reminders">Run email reminders now</button></div>
+    <div id="run-result"></div>
   </div>
   <h2>Students</h2>
   <div id="list"></div>
@@ -1984,6 +2082,9 @@ function card(s) {
   bits.push(s.minutes_week + ' min this week');
   if (s.level) bits.push('level ' + s.level);
   if (s.reminded_ago_days !== null) bits.push('reminded ' + ago(s.reminded_ago_days));
+  if (s.email_state === 'on') bits.push('email on, ' + String(s.remind_hour).padStart(2, '0') + ':00');
+  else if (s.email_state === 'pending') bits.push('email not confirmed yet');
+  else if (s.email_state === 'stopped') bits.push('email stopped');
   box.append(el('div', 'facts', bits.join(' · ')));
 
   const phoneRow = el('div', 'row');
@@ -2034,6 +2135,12 @@ $('open').onclick = async () => {
   try { await refresh(); $('login').hidden = true; $('main').hidden = false; }
   catch (e) { $('login-err').textContent = e.message; }
 };
+$('run-reminders').onclick = () => guarded($('run-reminders'), async () => {
+  const r = await call({action: 'run_reminders'});
+  const skipped = Object.entries(r.skipped).map(([why, n]) => n + ' ' + why).join(', ');
+  $('run-result').replaceChildren(el('div', 'ok', 'Checked ' + r.checked + ', sent ' + r.sent + (skipped ? '. Skipped: ' + skipped : '') + '.'));
+  await refresh();
+});
 $('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('open').click(); });
 $('create').onclick = async () => {
   const name = $('new-name').value.trim();
@@ -2154,6 +2261,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_bytes(INDEX_HTML.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path == "/admin" and ADMIN_CODE:
             self._send_bytes(ADMIN_HTML.encode("utf-8"), "text/html; charset=utf-8")
+        elif self.path.partition("?")[0] in ("/r/confirm", "/r/stop"):
+            self._handle_reminder_link()
         elif self.path == "/manifest.webmanifest":
             self._send_bytes(json.dumps(MANIFEST).encode("utf-8"), "application/manifest+json")
         elif self.path == "/sw.js":
@@ -2169,6 +2278,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         session = self._load_session()
+        if self.path.partition("?")[0] == "/r/stop":
+            # Mail programs' one-click unsubscribe: a form post, not JSON.
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if length:
+                self.rfile.read(length)
+            self._handle_reminder_link()
+            return
         try:
             length = int(self.headers.get("Content-Length", 0) or 0)
             raw = self.rfile.read(length) if length else b"{}"
@@ -2194,6 +2310,11 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/progress":
                 self._require_auth(session)
                 self._handle_progress(session, data)
+            elif self.path == "/api/reminders":
+                self._require_auth(session)
+                self._handle_reminder_settings(session, data)
+            elif self.path == "/api/cron/reminders":
+                self._handle_cron(data)
             elif self.path == "/api/notes":
                 self._require_auth(session)
                 self._handle_notes(session, data)
@@ -2438,11 +2559,14 @@ class Handler(BaseHTTPRequestHandler):
         call = store.open_call_for(student["student_id"])
         name = student["display_name"]
         level = store.level_label(student["student_id"])
+        email_reminders = dict(store.reminder_settings(student["student_id"]), available=emailer.configured())
         if not call:
-            self._send_json({"open_call": None, "last_session": last, "name": name, "level": level})
+            self._send_json({"open_call": None, "last_session": last, "name": name, "level": level,
+                             "reminders": email_reminders})
             return
         session["call_id"] = call["call_id"]
-        self._send_json({"last_session": last, "name": name, "level": level, "open_call": {
+        self._send_json({"last_session": last, "name": name, "level": level,
+                         "reminders": email_reminders, "open_call": {
             "call_id": call["call_id"],
             "mode": call["mode"],
             "level": call["level"],
@@ -2451,6 +2575,92 @@ class Handler(BaseHTTPRequestHandler):
             "updated_at": call["updated_at"],
             "transcript": call["transcript"][1:],  # drop the synthetic opener
         }})
+
+    def _reminder_links(self, token: str) -> tuple[str, str]:
+        return autoreminders.links(self._site_url(), token)
+
+    def _handle_reminder_link(self) -> None:
+        """Confirm or stop email reminders from the link in an email."""
+        action = self.path.partition("?")[0]
+        query = self.path.partition("?")[2]
+        token = dict(part.partition("=")[::2] for part in query.split("&") if part).get("t", "")
+        student = store.student_by_reminder_token(token)
+        site = self._site_url()
+        if not student:
+            body = _notice_page("Enlace no válido",
+                                "Este enlace ya no sirve. Puedes volver a pedir los recordatorios desde Juno.", site)
+            status = 404
+        elif action == "/r/confirm":
+            store.set_email_state(student["student_id"], "on")
+            body = _notice_page("Recordatorios activados",
+                                "Gracias. Recibirás como máximo un correo al día, solo si ese día no has practicado.", site)
+            status = 200
+        else:
+            store.set_email_state(student["student_id"], "stopped")
+            body = _notice_page("No recibirás más correos",
+                                "Listo, hemos parado los recordatorios. Puedes volver a pedirlos cuando quieras desde Juno.", site)
+            status = 200
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_reminder_settings(self, session: dict, data: dict) -> None:
+        """A student asks for (or stops) email reminders."""
+        if not emailer.configured():
+            self._send_json({"error": "Email reminders are not switched on."}, 404)
+            return
+        student = self._resolve_student(data)
+        sid = student["student_id"]
+        if data.get("action") == "stop":
+            store.set_email_state(sid, "stopped")
+            self._send_json({"state": "stopped"})
+            return
+        try:
+            hour = int(data.get("hour"))
+            tz_offset = int(data.get("tz_offset") or 0)
+        except (TypeError, ValueError):
+            self._send_json({"error": "Choose an hour of the day."}, 400)
+            return
+        try:
+            saved = store.save_reminder_settings(sid, data.get("email") or "", hour, tz_offset)
+        except ValueError as e:
+            self._send_json({"error": str(e)}, 400)
+            return
+        if saved["state"] == "pending":
+            now = time.time()
+            last = REMINDER_CONFIRM_SENT.get(sid, 0)
+            if now - last < 120:
+                self._send_json({"error": "We just sent you an email. Check your inbox, or try again in a couple of minutes."}, 429)
+                return
+            confirm_url, stop_url = self._reminder_links(saved["token"])
+            subject, text = emailer.confirmation(student["display_name"], saved["hour"], confirm_url, stop_url)
+            try:
+                emailer.send(saved["email"], subject, text, unsubscribe_url=stop_url)
+            except emailer.SendFailed as e:
+                print(f"[juno] confirmation email not sent: {e}", file=sys.stderr, flush=True)
+                self._send_json({"error": "We could not send the email right now. Please try again later."}, 503)
+                return
+            REMINDER_CONFIRM_SENT[sid] = now
+        self._send_json({"state": saved["state"], "email": saved["email"], "hour": saved["hour"]})
+
+    def _handle_cron(self, data: dict) -> None:
+        """Called by the outside timer. Behind its own secret, and absent without one."""
+        secret = os.environ.get("JUNO_CRON_SECRET", "")
+        if not secret:
+            self._send_json({"error": "not found"}, 404)
+            return
+        given = self.headers.get("X-Cron-Secret", "")
+        if not secrets.compare_digest(given, secret):
+            time.sleep(0.5)
+            self._send_json({"error": "Wrong secret."}, 401)
+            return
+        if not emailer.configured():
+            self._send_json({"error": "Email reminders are not switched on."}, 404)
+            return
+        self._send_json(autoreminders.run(self._site_url()))
 
     def _handle_notes(self, session: dict, data: dict) -> None:
         """Every finished class's session notes, for the Notes tab."""
@@ -2534,6 +2744,11 @@ class Handler(BaseHTTPRequestHandler):
                 students.append(facts)
             students.sort(key=lambda f: f["reminder"]["kind"] not in reminders.KINDS_THAT_SEND)
             self._send_json({"students": students, "site_url": site})
+        elif action == "run_reminders":
+            if not emailer.configured():
+                self._send_json({"error": "Email is not set up yet (RESEND_API_KEY and JUNO_EMAIL_FROM)."}, 400)
+                return
+            self._send_json(autoreminders.run(self._site_url()))
         elif action == "create":
             name = (data.get("name") or "").strip()
             if not name:

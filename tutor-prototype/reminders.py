@@ -42,6 +42,16 @@ def suggest(facts: dict, site_url: str = "") -> dict:
     if ago == 0:
         return out("wait", "Reminded today")
     if facts.get("classes", 0) == 0:
+        sent = facts.get("reminders_sent") or 0
+        if sent >= 2:
+            return out("quiet", "Reminded twice, has not started")
+        if sent == 1:
+            if ago is not None and ago < 7:
+                return out("wait", "Reminded recently")
+            return out("closing", "Has not started", (
+                f"Hola {name}, no quiero llenarte de mensajes, así que este es el último por ahora. "
+                f"Tu espacio con Juno sigue listo{where} por si quieres empezar.{entry} "
+                "Cuando quieras, me escribes."))
         if ago is not None and ago < 3:
             return out("wait", "Reminded recently")
         return out("welcome", "Has not started", (

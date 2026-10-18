@@ -266,6 +266,31 @@ step towards push notifications. Known risk: speech recognition may not work
 inside the iPhone home-screen icon; the page says so and points the student
 to Safari or typing.
 
+### Email reminders (students turn them on themselves)
+
+Off until `RESEND_API_KEY` and `JUNO_EMAIL_FROM` are set; students see nothing
+about it before that. Then the Today screen offers "Practice reminders by
+email": the student gives an email, an hour and a tick of consent, gets a
+confirmation email (double opt-in), and from then on receives at most one email
+a day at their own local hour, only on weekdays and only if they have not
+practised, using the same rules as the teacher's reminder helper. Every email
+has an unsubscribe link (and the one-click header mail programs use).
+
+| Variable | What it is |
+|---|---|
+| `RESEND_API_KEY` | API key from resend.com |
+| `JUNO_EMAIL_FROM` | e.g. `Juno <juno@yourdomain.com>`, on a domain verified in Resend |
+| `JUNO_EMAIL_REPLY_TO` | optional: where replies go (the teacher) |
+| `JUNO_CRON_SECRET` | a long random string the timer must send |
+| `JUNO_PUBLIC_URL` | the site's address, used in links inside emails |
+
+The sending is started by an outside timer (Render's free plan has none): a
+job that calls `POST /api/cron/reminders` with the header
+`X-Cron-Secret: <JUNO_CRON_SECRET>` about once an hour (for example on
+cron-job.org). A student is emailed if the local hour is their chosen hour or
+up to two hours after, so a late timer still catches them. The teacher page
+has a button to run the same check immediately.
+
 ### The screens
 
 Four tabs along the bottom: **Today** (greeting, the three ways to talk, the
