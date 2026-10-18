@@ -240,6 +240,21 @@ sent, as before. **Speed** (in class) sets how fast Juno's voice speaks
 the Practice screen) tells Juno to use short sentences, the commonest words and
 no idioms for that class.
 
+### Reminders (teacher page)
+
+`/admin` lists every student with their last class, streak and level, and
+suggests a short WhatsApp message for those who have gone quiet. Juno sends
+nothing by itself: **Open WhatsApp** opens a chat from the teacher's own phone
+with the message already typed, which they can edit before sending. Rules
+(`reminders.py`): nothing for someone who practised today or was already
+reminded today, at most one a day, messages spaced out at 1-2, 3, 7 and 14
+days (the last one closes the door kindly and is not repeated), weekends
+marked optional, and a per-student pause. Wording is sober and practical, with
+no exclamation marks or emoji. Phone numbers are optional, stored only if the
+teacher types them (with country code), and mentioned in the students'
+privacy notice. `JUNO_PUBLIC_URL` sets the link used inside messages; by
+default it is the address the teacher page was opened from.
+
 ### The screens
 
 Four tabs along the bottom: **Today** (greeting, the three ways to talk, the

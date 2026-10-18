@@ -42,6 +42,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import anthropic
 
+import reminders  # what to say to a student who has gone quiet
 import store  # identity, limits, saved calls, cost metrics
 import tutor  # the exact tested logic: prompts, tiers, report schema
 
@@ -425,6 +426,7 @@ INDEX_HTML = """<!doctype html>
           <li><b>What it is for:</b> so Juno remembers you between classes and does not repeat what you already know. Nothing else.</li>
           <li><b>Who can see it:</b> you, and your teacher at S&amp;R Spain. It is not shared with anyone else and is not used to train anything.</li>
           <li><b>Please do not type confidential information</b> — real client names, personal data about colleagues, anything under NDA. Practise with the situation, not the specifics.</li>
+          <li><b>Your phone number:</b> only if you gave it to your teacher. They use it to send you practice reminders on WhatsApp, nothing else. Ask and it is removed.</li>
           <li><b>To have your data deleted:</b> ask your teacher and it is removed.</li>
         </ul>
       </details>
@@ -1802,69 +1804,138 @@ ADMIN_HTML = """<!doctype html>
 <meta name="robots" content="noindex">
 <title>Juno teacher page</title>
 <style>
-  body{margin:0;background:#0E131D;color:#C9CCD3;font-family:system-ui,sans-serif;font-size:15px}
+  body{margin:0;background:#0E0C16;color:#CFC9DD;font-family:system-ui,sans-serif;font-size:15px}
   .wrap{max-width:760px;margin:0 auto;padding:24px 18px 60px}
-  h1{color:#F4EEE4;font-weight:600;font-size:26px;margin:0 0 6px}
-  p.sub{color:#8A92A2;margin:0 0 22px}
-  .panel{background:#171E2B;border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:18px;margin-bottom:16px;overflow-x:auto}
-  input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:#1F2737;color:#F4EEE4;font-size:16px;box-sizing:border-box}
-  button{border:none;border-radius:999px;padding:11px 18px;background:#FF4A1C;color:#fff;font-weight:600;font-size:14px;cursor:pointer}
-  button.ghost{background:transparent;border:1px solid rgba(255,255,255,.18);color:#C9CCD3}
+  h1{color:#F6F2EA;font-weight:600;font-size:26px;margin:0 0 6px}
+  h2{color:#F6F2EA;font-weight:600;font-size:17px;margin:26px 0 10px}
+  p.sub{color:#8B84A8;margin:0 0 22px}
+  .panel{background:#1A1628;border:1px solid rgba(255,255,255,.10);border-radius:18px;padding:18px;margin-bottom:14px}
+  input,textarea{width:100%;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:#252036;color:#F6F2EA;font-size:16px;box-sizing:border-box;font-family:inherit}
+  textarea{resize:vertical;line-height:1.45;font-size:15px}
+  button{border:none;border-radius:999px;padding:11px 18px;background:#7A4BEE;color:#fff;font-weight:600;font-size:14px;cursor:pointer}
+  button:disabled{opacity:.45;cursor:default}
+  button.ghost{background:transparent;border:1px solid rgba(255,255,255,.2);color:#CFC9DD}
   .row{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center}
-  table{width:100%;border-collapse:collapse;font-size:14px}
-  td,th{text-align:left;padding:9px 6px;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:middle}
-  th{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#8A92A2;font-weight:500}
-  code{background:#1F2737;padding:3px 8px;border-radius:8px;color:#FF8A5C;font-size:14px;white-space:nowrap}
-  td button{padding:8px 12px;font-size:13px;white-space:nowrap}
+  .row input{flex:1;min-width:150px}
+  code{background:#252036;padding:3px 8px;border-radius:8px;color:#B79BFF;font-size:14px;white-space:nowrap}
   .err{color:#FF7A6B;margin-top:10px}.ok{color:#5FD0A0;margin-top:10px}
-  .muted{color:#8A92A2}
+  .muted{color:#8B84A8;font-size:13.5px}
+  .tip{background:#241C3B;border:1px solid rgba(155,124,255,.35);border-radius:14px;padding:12px 14px;font-size:14px;line-height:1.5;margin-bottom:14px}
+  .card{background:#1A1628;border:1px solid rgba(255,255,255,.10);border-radius:18px;padding:16px;margin-bottom:12px}
+  .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+  .top strong{color:#F6F2EA;font-size:17px}
+  .chip{margin-left:auto;font-size:12px;border-radius:999px;padding:4px 10px;background:#252036;color:#CFC9DD;white-space:nowrap}
+  .chip.send{background:#3B2A7A;color:#E4DAFF}
+  .chip.good{background:#173B2E;color:#8FE3BE}
+  .facts{color:#8B84A8;font-size:13.5px;margin-bottom:10px}
+  .card textarea{margin-top:10px}
+  .soft{color:#E3A33B;font-size:13px;margin-top:8px}
 </style></head><body><div class="wrap">
 <h1>Juno teacher page</h1>
-<p class="sub">Personal codes let a student keep their history on any phone or computer.</p>
+<p class="sub">Personal codes, and reminders you send yourself.</p>
 <div class="panel" id="login">
   <input type="password" id="code" placeholder="Teacher code" autocomplete="current-password">
   <div class="row"><button id="open">Open</button></div>
   <div class="err" id="login-err"></div>
 </div>
 <div id="main" hidden>
+  <div class="tip">Best time to send: from 18:00 to 19:00. Before 17:30 most adults are still working. One reminder a day at most, and softer at weekends. Messages open in WhatsApp already written; you read them, change what you like, and press send yourself.</div>
   <div class="panel">
-    <strong style="color:#F4EEE4">New student</strong>
-    <div class="row"><input id="new-name" placeholder="Student's first name" style="flex:1"><button id="create">Create code</button></div>
+    <strong style="color:#F6F2EA">New student</strong>
+    <div class="row"><input id="new-name" placeholder="First name"><input id="new-phone" placeholder="WhatsApp, with country code (optional)"><button id="create">Create code</button></div>
     <div id="created"></div>
   </div>
-  <div class="panel"><table id="list"></table></div>
+  <h2>Students</h2>
+  <div id="list"></div>
 </div>
 <script>
 const $ = (i) => document.getElementById(i);
 let adminCode = '';
 async function call(body) {
   const res = await fetch('/api/admin', {method: 'POST', headers: {'content-type': 'application/json'},
-    body: JSON.stringify(Object.assign({admin_code: adminCode}, body))});
+    body: JSON.stringify(Object.assign({admin_code: adminCode, tz_offset: new Date().getTimezoneOffset()}, body))});
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Something went wrong.');
   return data;
 }
-function cell(tag, text) { const c = document.createElement(tag); c.textContent = text; return c; }
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+function ago(days) {
+  if (days === null || days === undefined) return 'never';
+  if (days === 0) return 'today';
+  return days === 1 ? 'yesterday' : days + ' days ago';
+}
+async function guarded(button, work) {
+  button.disabled = true;
+  try { await work(); } catch (e) { alert(e.message); } finally { button.disabled = false; }
+}
+function card(s) {
+  const r = s.reminder;
+  const box = el('div', 'card');
+  const top = el('div', 'top');
+  top.append(el('strong', '', s.display_name));
+  if (s.access_code) {
+    top.append(el('code', '', s.access_code));
+  } else {
+    const give = el('button', 'ghost', 'Give a code');
+    give.onclick = () => guarded(give, async () => { await call({action: 'assign', student_id: s.student_id}); await refresh(); });
+    top.append(give);
+  }
+  top.append(el('span', 'chip ' + (['welcome', 'streak', 'nudge', 'back_3', 'back_7', 'closing'].includes(r.kind) ? 'send' : r.kind === 'done' ? 'good' : ''), r.label));
+  box.append(top);
+
+  const bits = ['Last class: ' + ago(s.days_since_last), s.classes + (s.classes === 1 ? ' class' : ' classes')];
+  if (s.streak_days > 1) bits.push(s.streak_days + '-day streak');
+  bits.push(s.minutes_week + ' min this week');
+  if (s.level) bits.push('level ' + s.level);
+  if (s.reminded_ago_days !== null) bits.push('reminded ' + ago(s.reminded_ago_days));
+  box.append(el('div', 'facts', bits.join(' · ')));
+
+  const phoneRow = el('div', 'row');
+  phoneRow.style.marginTop = '0';
+  const phone = el('input');
+  phone.placeholder = 'WhatsApp, with country code';
+  phone.value = s.phone || '';
+  const save = el('button', 'ghost', 'Save number');
+  save.onclick = () => guarded(save, async () => { await call({action: 'set_phone', student_id: s.student_id, phone: phone.value}); await refresh(); });
+  phoneRow.append(phone, save);
+  box.append(phoneRow);
+
+  if (r.message) {
+    const text = el('textarea');
+    text.rows = 7;
+    text.value = r.message;
+    box.append(text);
+    const actions = el('div', 'row');
+    const send = el('button', '', 'Open WhatsApp');
+    send.disabled = !s.phone;
+    send.onclick = () => {
+      window.open('https://wa.me/' + s.phone.replace('+', '') + '?text=' + encodeURIComponent(text.value), '_blank');
+      guarded(send, async () => { await call({action: 'mark_reminded', student_id: s.student_id}); await refresh(); });
+    };
+    const copy = el('button', 'ghost', 'Copy message');
+    copy.onclick = async () => { try { await navigator.clipboard.writeText(text.value); copy.textContent = 'Copied'; } catch (e) { text.select(); } };
+    actions.append(send, copy);
+    if (!s.phone) actions.append(el('span', 'muted', 'Add a number to send it on WhatsApp.'));
+    box.append(actions);
+    if (r.soft) box.append(el('div', 'soft', 'It is the weekend: this one is optional.'));
+  }
+  const pause = el('button', 'ghost', s.paused ? 'Resume reminders' : 'Pause reminders');
+  pause.style.marginTop = '12px';
+  pause.onclick = () => guarded(pause, async () => { await call({action: 'set_paused', student_id: s.student_id, paused: !s.paused}); await refresh(); });
+  box.append(pause);
+  return box;
+}
 async function refresh() {
   const data = await call({action: 'list'});
-  const t = $('list'); t.innerHTML = '';
-  const head = document.createElement('tr');
-  ['Student', 'Code', 'Classes'].forEach((h) => head.append(cell('th', h)));
-  t.append(head);
-  data.students.forEach((s) => {
-    const tr = document.createElement('tr');
-    tr.append(cell('td', s.display_name));
-    const codeTd = document.createElement('td');
-    if (s.access_code) {
-      codeTd.append(cell('code', s.access_code));
-    } else {
-      const b = cell('button', 'Give a code'); b.className = 'ghost';
-      b.onclick = async () => { b.disabled = true; try { await call({action: 'assign', student_id: s.student_id}); await refresh(); } catch (e) { alert(e.message); b.disabled = false; } };
-      codeTd.append(b);
-    }
-    tr.append(codeTd, cell('td', String(s.classes)));
-    t.append(tr);
-  });
+  const list = $('list');
+  list.replaceChildren();
+  if (!data.students.length) list.append(el('p', 'muted', 'No students yet. Create the first one above.'));
+  data.students.forEach((s) => list.append(card(s)));
 }
 $('open').onclick = async () => {
   adminCode = $('code').value;
@@ -1877,13 +1948,13 @@ $('create').onclick = async () => {
   const name = $('new-name').value.trim();
   if (!name) return;
   try {
-    const data = await call({action: 'create', name});
-    const box = $('created'); box.innerHTML = '';
-    const p = cell('div', name + ': '); p.className = 'ok'; p.append(cell('code', data.access_code));
-    box.append(p);
-    $('new-name').value = '';
+    const data = await call({action: 'create', name, phone: $('new-phone').value});
+    const box = $('created'); box.replaceChildren();
+    const line = el('div', 'ok', name + ': '); line.append(el('code', '', data.access_code));
+    box.append(line);
+    $('new-name').value = ''; $('new-phone').value = '';
     await refresh();
-  } catch (e) { const d = cell('div', e.message); d.className = 'err'; $('created').replaceChildren(d); }
+  } catch (e) { $('created').replaceChildren(el('div', 'err', e.message)); }
 };
 </script></div></body></html>
 """
@@ -2350,25 +2421,69 @@ class Handler(BaseHTTPRequestHandler):
             return
         action = data.get("action")
         if action == "list":
-            self._send_json({"students": store.list_students()})
+            try:
+                tz_offset = int(data.get("tz_offset") or 0)
+            except (TypeError, ValueError):
+                tz_offset = 0
+            site = self._site_url()
+            students = []
+            for facts in store.students_overview(tz_offset):
+                # Placeholder records from visitors who never gave a name or code.
+                if not (facts["access_code"] or facts["phone"] or facts["classes"]
+                        or facts["display_name"] != "Student"):
+                    continue
+                facts["reminder"] = reminders.suggest(facts, site)
+                students.append(facts)
+            students.sort(key=lambda f: f["reminder"]["kind"] not in reminders.KINDS_THAT_SEND)
+            self._send_json({"students": students, "site_url": site})
         elif action == "create":
             name = (data.get("name") or "").strip()
             if not name:
                 self._send_json({"error": "Type the student's name first."}, 400)
                 return
+            try:
+                phone = store.normalise_phone(data.get("phone") or "")
+            except ValueError as e:
+                self._send_json({"error": str(e)}, 400)
+                return
             code = store.make_access_code(name)
-            store.create_student(name, access_code=code)
+            student_id = store.create_student(name, access_code=code)
+            if phone:
+                store.set_phone(student_id, phone)
             self._send_json({"access_code": code})
-        elif action == "assign":
+        elif action in ("assign", "set_phone", "set_paused", "mark_reminded"):
             student = store.get_student(str(data.get("student_id") or ""))
             if not student:
                 self._send_json({"error": "No such student."}, 404)
                 return
-            code = store.set_access_code(student["student_id"],
-                                         store.make_access_code(student["display_name"]))
-            self._send_json({"access_code": code})
+            sid = student["student_id"]
+            if action == "assign":
+                code = store.set_access_code(sid, store.make_access_code(student["display_name"]))
+                self._send_json({"access_code": code})
+            elif action == "set_phone":
+                try:
+                    self._send_json({"phone": store.set_phone(sid, str(data.get("phone") or ""))})
+                except ValueError as e:
+                    self._send_json({"error": str(e)}, 400)
+            elif action == "set_paused":
+                store.set_reminders_paused(sid, bool(data.get("paused")))
+                self._send_json({"ok": True})
+            else:
+                store.mark_reminded(sid)
+                self._send_json({"ok": True})
         else:
             self._send_json({"error": "Unknown action."}, 400)
+
+    def _site_url(self) -> str:
+        """Where students open Juno, for the links inside reminders."""
+        configured = os.environ.get("JUNO_PUBLIC_URL", "").strip().rstrip("/")
+        if configured:
+            return configured
+        host = (self.headers.get("Host") or "").strip()
+        if not host:
+            return ""
+        local = host.startswith(("localhost", "127.", "0.0.0.0"))
+        return f"{'http' if local else 'https'}://{host}"
 
     def _close_unfinished_classes(self, student_id: str) -> None:
         """Fold a student's abandoned classes into their memory.

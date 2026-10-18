@@ -215,6 +215,20 @@ class PageTest(ServerTestCase, unittest.TestCase):
         self.assertIn("function restoreIdentity(", self.html)
         self.assertIn('id="profile-card"', self.html)
 
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_teacher_page_script_has_no_syntax_errors(self) -> None:
+        scripts = re.findall(r"<script>(.*?)</script>", web.ADMIN_HTML, re.S)
+        self.assertTrue(scripts)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "admin.js"
+            path.write_text("\n".join(scripts), encoding="utf-8")
+            result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_teacher_page_never_pastes_student_text_in_as_html(self) -> None:
+        # Names and phone numbers are typed by students and the teacher.
+        self.assertNotIn("innerHTML", web.ADMIN_HTML)
+
     def test_class_screen_has_pause_help_and_typing(self) -> None:
         for el in ('id="pause-btn"', 'id="help-btn"', 'id="end-btn"',
                    'id="type-toggle"', 'id="call-clock"', 'id="juno-line"',

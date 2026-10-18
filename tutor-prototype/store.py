@@ -282,6 +282,26 @@ def _init_schema(conn) -> None:
         """
     )
     conn.commit()
+    _ensure_columns(conn)
+
+
+def _ensure_columns(conn) -> None:
+    """Add columns introduced after a database was first created."""
+    wanted = {
+        "phone": "TEXT",                       # WhatsApp number, only if the teacher was given one
+        "last_reminded_at": "TEXT",
+        "reminders_paused": "INTEGER NOT NULL DEFAULT 0",
+    }
+    if using_postgres():
+        rows = conn.execute("SELECT column_name FROM information_schema.columns"
+                            " WHERE table_name = 'students'").fetchall()
+        have = {r["column_name"] for r in rows}
+    else:
+        have = {r["name"] for r in conn.execute("PRAGMA table_info(students)").fetchall()}
+    for column, ddl in wanted.items():
+        if column not in have:
+            conn.execute(f"ALTER TABLE students ADD COLUMN {column} {ddl}")
+    conn.commit()
 
 
 def _now() -> str:
@@ -799,6 +819,7 @@ def progress_for(student_id: str, tz_offset_minutes: int = 0, today=None) -> dic
         d -= timedelta(days=1)
 
     return {
+        "today": today.isoformat(),
         "level": skill_summary([c["report"] for c in classes]),
         "classes_total": len(classes),
         "minutes_total": round(sum(c["minutes"] for c in classes)),
@@ -891,3 +912,75 @@ def level_label(student_id: str) -> str | None:
         return None
     overall = summary["overall"]
     return overall["band"] + ("+" if overall["plus"] and overall["next_band"] else "")
+
+
+# --- Reminders (the teacher sends these by hand; nothing here sends anything) --
+
+def normalise_phone(raw: str) -> str:
+    """"+34 600-000-000" or "0034600000000" -> "+34600000000". Empty clears it."""
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    digits = "".join(c for c in text if c.isdigit())
+    if text.startswith("+"):
+        pass
+    elif text.startswith("00"):
+        digits = digits[2:]
+    else:
+        raise ValueError("Include the country code, for example +34 600 000 000.")
+    if not 8 <= len(digits) <= 15:
+        raise ValueError("That phone number does not look right. Example: +34 600 000 000.")
+    return "+" + digits
+
+
+def set_phone(student_id: str, raw: str) -> str:
+    phone = normalise_phone(raw)
+    conn = connect()
+    conn.execute("UPDATE students SET phone = ? WHERE student_id = ?", (phone or None, student_id))
+    conn.commit()
+    return phone
+
+
+def set_reminders_paused(student_id: str, paused: bool) -> None:
+    conn = connect()
+    conn.execute("UPDATE students SET reminders_paused = ? WHERE student_id = ?",
+                 (1 if paused else 0, student_id))
+    conn.commit()
+
+
+def mark_reminded(student_id: str) -> None:
+    conn = connect()
+    conn.execute("UPDATE students SET last_reminded_at = ? WHERE student_id = ?", (_now(), student_id))
+    conn.commit()
+
+
+def students_overview(tz_offset_minutes: int = 0, today=None) -> list[dict]:
+    """Every student with the facts a reminder depends on."""
+    from datetime import date, timedelta
+
+    rows = connect().execute(
+        "SELECT student_id, display_name, access_code, phone, last_reminded_at, reminders_paused"
+        " FROM students ORDER BY last_seen_at DESC"
+    ).fetchall()
+    out = []
+    for r in rows:
+        progress = progress_for(r["student_id"], tz_offset_minutes, today)
+        today_day = date.fromisoformat(progress["today"])
+        last = progress["recent"][0]["date"] if progress["recent"] else None
+        reminded = _parse_time(r["last_reminded_at"])
+        reminded_ago = None
+        if reminded:
+            local = (reminded - timedelta(minutes=max(-840, min(840, int(tz_offset_minutes))))).date()
+            reminded_ago = (today_day - local).days
+        out.append({
+            "student_id": r["student_id"], "display_name": r["display_name"],
+            "access_code": r["access_code"], "phone": r["phone"],
+            "paused": bool(r["reminders_paused"]),
+            "classes": progress["classes_total"], "streak_days": progress["streak_days"],
+            "minutes_week": progress["minutes_week"], "today": progress["today"],
+            "last_class_day": last,
+            "days_since_last": (today_day - date.fromisoformat(last)).days if last else None,
+            "reminded_ago_days": reminded_ago,
+            "level": level_label(r["student_id"]),
+        })
+    return out
