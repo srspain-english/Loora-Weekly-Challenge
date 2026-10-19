@@ -281,15 +281,18 @@ class TimerEndpointTest(EmailTestCase, ServerTestCase, unittest.TestCase):
         self.assertEqual(self.call("wrong")[0], 401)
         status, data = self.call("cron-secret")
         self.assertEqual(status, 200)
-        self.assertEqual(set(data), {"checked", "sent", "skipped"})
+        self.assertEqual(set(data), {"classes_closed", "checked", "sent", "skipped"})
 
     def test_it_does_not_exist_without_a_secret(self) -> None:
         with mock.patch.dict(os.environ, {"JUNO_CRON_SECRET": ""}):
             self.assertEqual(self.call("anything")[0], 404)
 
-    def test_it_does_nothing_until_email_is_set_up(self) -> None:
+    def test_without_email_it_still_tidies_classes_but_sends_nothing(self) -> None:
         with mock.patch.dict(os.environ, {"RESEND_API_KEY": ""}):
-            self.assertEqual(self.call("cron-secret")[0], 404)
+            status, data = self.call("cron-secret")
+        self.assertEqual(status, 200)
+        self.assertEqual(set(data), {"classes_closed"})
+        self.assertEqual(self.sent, [])
 
 
 class SenderTest(unittest.TestCase):

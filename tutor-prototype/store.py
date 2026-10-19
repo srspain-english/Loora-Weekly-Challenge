@@ -975,11 +975,7 @@ def _facts_for_row(r, tz_offset_minutes: int, today=None) -> dict:
     progress = progress_for(r["student_id"], tz_offset_minutes, today)
     today_day = date.fromisoformat(progress["today"])
     last = progress["recent"][0]["date"] if progress["recent"] else None
-    reminded = _parse_time(r["last_reminded_at"])
-    reminded_ago = None
-    if reminded:
-        local = (reminded - timedelta(minutes=tz_offset_minutes)).date()
-        reminded_ago = (today_day - local).days
+    reminded_ago = _days_ago(r["last_reminded_at"], today_day, tz_offset_minutes)
     return {
         "student_id": r["student_id"], "display_name": r["display_name"],
         "access_code": r["access_code"], "phone": r["phone"],
@@ -992,11 +988,25 @@ def _facts_for_row(r, tz_offset_minutes: int, today=None) -> dict:
         "days_since_last": (today_day - date.fromisoformat(last)).days if last else None,
         "reminded_ago_days": reminded_ago,
         "level": level_label(r["student_id"]),
+        "last_seen_at": r["last_seen_at"],
+        "last_seen_days": _days_ago(r["last_seen_at"], today_day, tz_offset_minutes),
+        "unfinished_classes": connect().execute(
+            "SELECT COUNT(*) AS n FROM calls WHERE student_id = ? AND status = 'open'",
+            (r["student_id"],)).fetchone()["n"],
     }
 
 
+def _days_ago(stamp: str | None, today_day, tz_offset_minutes: int):
+    from datetime import timedelta
+
+    moment = _parse_time(stamp)
+    if not moment:
+        return None
+    return (today_day - (moment - timedelta(minutes=tz_offset_minutes)).date()).days
+
+
 _FACT_COLUMNS = ("student_id, display_name, access_code, phone, last_reminded_at, reminders_paused,"
-                 " email, email_state, remind_hour, tz_offset, reminders_sent")
+                 " email, email_state, remind_hour, tz_offset, reminders_sent, last_seen_at")
 
 
 def students_overview(tz_offset_minutes: int = 0, today=None) -> list[dict]:
@@ -1069,3 +1079,15 @@ def students_with_email_on() -> list[dict]:
     rows = connect().execute(
         f"SELECT {_FACT_COLUMNS} FROM students WHERE email_state = 'on' AND email IS NOT NULL").fetchall()
     return [dict(r) for r in rows]
+
+
+def stale_open_calls(idle_hours: float = 3) -> list[dict]:
+    """Classes left open with nothing new for a while: the student closed the
+    tab without pressing End and has not come back."""
+    from datetime import timedelta
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=idle_hours)).isoformat(timespec="seconds")
+    rows = connect().execute(
+        "SELECT call_id FROM calls WHERE status = 'open' AND updated_at < ? ORDER BY updated_at",
+        (cutoff,)).fetchall()
+    return [get_call(r["call_id"]) for r in rows]

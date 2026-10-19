@@ -2013,6 +2013,12 @@ ADMIN_HTML = """<!doctype html>
   .facts{color:#8B84A8;font-size:13.5px;margin-bottom:10px}
   .card textarea{margin-top:10px}
   .soft{color:#E3A33B;font-size:13px;margin-top:8px}
+  .detail{margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.10);font-size:14px;line-height:1.5}
+  .detail p{margin:0 0 8px}
+  .detail .big{color:#F6F2EA;font-weight:600;font-size:15px}
+  .detail .label{color:#8B84A8;font-size:11px;letter-spacing:.12em;text-transform:uppercase;margin:14px 0 4px}
+  .detail ul{margin:0;padding-left:18px}
+  .detail li{margin-bottom:4px}
 </style></head><body><div class="wrap">
 <h1>Juno teacher page</h1>
 <p class="sub">Personal codes, and reminders you send yourself.</p>
@@ -2029,9 +2035,9 @@ ADMIN_HTML = """<!doctype html>
     <div id="created"></div>
   </div>
   <div class="panel">
-    <strong style="color:#F6F2EA">Email reminders</strong>
-    <p class="muted" style="margin:6px 0 0">Students who turned them on get one automatically, on weekdays, at their own hour. This button runs the check now instead of waiting for the timer.</p>
-    <div class="row"><button class="ghost" id="run-reminders">Run email reminders now</button></div>
+    <strong style="color:#F6F2EA">Hourly check</strong>
+    <p class="muted" style="margin:6px 0 0">Every hour the timer closes classes a student left without pressing End (so their notes and progress appear), and emails students who turned reminders on, on weekdays at their own hour. This button runs it now.</p>
+    <div class="row"><button class="ghost" id="run-reminders">Run it now</button></div>
     <div id="run-result"></div>
   </div>
   <h2>Students</h2>
@@ -2077,7 +2083,9 @@ function card(s) {
   top.append(el('span', 'chip ' + (['welcome', 'streak', 'nudge', 'back_3', 'back_7', 'closing'].includes(r.kind) ? 'send' : r.kind === 'done' ? 'good' : ''), r.label));
   box.append(top);
 
-  const bits = ['Last class: ' + ago(s.days_since_last), s.classes + (s.classes === 1 ? ' class' : ' classes')];
+  const bits = ['Last seen: ' + ago(s.last_seen_days), 'last class: ' + ago(s.days_since_last),
+    s.classes + (s.classes === 1 ? ' class' : ' classes')];
+  if (s.unfinished_classes) bits.push(s.unfinished_classes + ' not finished yet');
   if (s.streak_days > 1) bits.push(s.streak_days + '-day streak');
   bits.push(s.minutes_week + ' min this week');
   if (s.level) bits.push('level ' + s.level);
@@ -2116,11 +2124,50 @@ function card(s) {
     box.append(actions);
     if (r.soft) box.append(el('div', 'soft', 'It is the weekend: this one is optional.'));
   }
+  const detail = el('div', 'detail');
+  detail.hidden = true;
+  const more = el('button', 'ghost', 'See progress');
+  more.style.marginTop = '12px';
+  more.style.marginRight = '8px';
+  more.onclick = () => guarded(more, async () => {
+    if (!detail.hidden) { detail.hidden = true; more.textContent = 'See progress'; return; }
+    showProgress(detail, await call({action: 'progress', student_id: s.student_id}));
+    detail.hidden = false;
+    more.textContent = 'Hide progress';
+  });
+  box.append(more);
   const pause = el('button', 'ghost', s.paused ? 'Resume reminders' : 'Pause reminders');
   pause.style.marginTop = '12px';
   pause.onclick = () => guarded(pause, async () => { await call({action: 'set_paused', student_id: s.student_id, paused: !s.paused}); await refresh(); });
-  box.append(pause);
+  box.append(pause, detail);
   return box;
+}
+const MODES = {free: 'Free talk', business: 'Business English', structured: 'Structured class'};
+function showProgress(box, p) {
+  box.replaceChildren();
+  const level = p.level || {};
+  if (level.ready) {
+    const o = level.overall;
+    box.append(el('p', 'big', 'Level estimate: ' + o.band + (o.plus && o.next_band ? '+' : '')
+      + ' (from the last ' + level.rated_classes + ' classes)'));
+    box.append(el('p', 'muted', level.skills.map((k) => k.label + ' ' + k.band + (k.plus && k.next_band ? '+' : '')).join(' · ')));
+  } else {
+    box.append(el('p', 'muted', 'No level estimate yet: it needs 2 full classes, and has ' + (level.rated_classes || 0) + '.'));
+  }
+  box.append(el('p', '', p.classes_total + ' classes · ' + p.minutes_total + ' min in total · ' + p.minutes_week
+    + ' min this week · ' + p.streak_days + '-day streak · ' + p.words_learned + ' new words and phrases'));
+  const list = (title, items) => {
+    if (!items.length) return;
+    box.append(el('p', 'label', title));
+    const ul = el('ul');
+    items.forEach((t) => ul.append(el('li', '', t)));
+    box.append(ul);
+  };
+  list('Working on', p.working_on);
+  list('Recent classes', p.recent.map((c) => c.date + ' · ' + (MODES[c.mode] || c.mode) + ' · ' + c.minutes + ' min'
+    + (c.what_we_did ? ' — ' + c.what_we_did : '')));
+  list('Latest words', p.recent_words);
+  if (p.next_recommendation) list('Next focus', [p.next_recommendation]);
 }
 async function refresh() {
   const data = await call({action: 'list'});
@@ -2137,8 +2184,15 @@ $('open').onclick = async () => {
 };
 $('run-reminders').onclick = () => guarded($('run-reminders'), async () => {
   const r = await call({action: 'run_reminders'});
-  const skipped = Object.entries(r.skipped).map(([why, n]) => n + ' ' + why).join(', ');
-  $('run-result').replaceChildren(el('div', 'ok', 'Checked ' + r.checked + ', sent ' + r.sent + (skipped ? '. Skipped: ' + skipped : '') + '.'));
+  const c = r.classes_closed;
+  let text = 'Classes closed: ' + c.reported + (c.dropped ? ' (and ' + c.dropped + ' empty ones dropped)' : '') + '.';
+  if (r.checked !== undefined) {
+    const skipped = Object.entries(r.skipped).map(([why, n]) => n + ' ' + why).join(', ');
+    text += ' Emails: checked ' + r.checked + ', sent ' + r.sent + (skipped ? ', skipped ' + skipped : '') + '.';
+  } else {
+    text += ' Email reminders are not set up.';
+  }
+  $('run-result').replaceChildren(el('div', 'ok', text));
   await refresh();
 });
 $('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('open').click(); });
@@ -2158,6 +2212,53 @@ $('create').onclick = async () => {
 """
 
 client = anthropic.Anthropic()
+
+
+def fold_unfinished_class(call: dict) -> str:
+    """Close a class the student never ended: write its report and fold what
+    it taught into their memory, exactly as pressing End would have. A class
+    with almost nothing said is just dropped. Returns 'reported' or 'dropped'."""
+    if call["turns"] < 2:
+        store.abandon_call(call["call_id"])
+        return "dropped"
+    report = tutor.generate_report(client, call["transcript"])
+    memory = tutor.load_student(call["student_id"])
+    memory = tutor.apply_report_to_student(
+        memory, report, call["mode"],
+        {"id": call["scenario_id"]} if call["scenario_id"] else None)
+    tutor.save_student(memory)
+    store.finish_call(call["call_id"], report)
+    return "reported"
+
+
+def progress_payload(student: dict, tz_offset: int) -> dict:
+    """The numbers behind the Progress screen, for the student or the teacher.
+    All of it comes from saved classes and Juno's memory of the student."""
+    numbers = store.progress_for(student["student_id"], tz_offset)
+    memory = tutor.load_student(student["student_id"])
+    words = memory.get("vocab_acquired_log") or []
+    numbers.update({
+        "name": student["display_name"],
+        "words_learned": len(words),
+        "recent_words": [w.split(" — ")[0] for w in words[-6:]][::-1],
+        "grammar_covered": (memory.get("grammar_covered") or [])[-5:][::-1],
+        "working_on": (memory.get("recurring_error_patterns") or [])[:5],
+        "next_recommendation": memory.get("next_recommendation") or "",
+    })
+    return numbers
+
+
+def close_stale_classes(idle_hours: float = 3) -> dict:
+    """Run by the hourly timer, so a student who closed the tab and never came
+    back still gets their notes, and the teacher sees the class."""
+    done = {"reported": 0, "dropped": 0, "failed": 0}
+    for call in store.stale_open_calls(idle_hours):
+        try:
+            done[fold_unfinished_class(call)] += 1
+        except Exception as e:  # noqa: BLE001
+            done["failed"] += 1
+            print(f"[juno] could not close an old class: {e!r}", file=sys.stderr, flush=True)
+    return done
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -2657,10 +2758,10 @@ class Handler(BaseHTTPRequestHandler):
             time.sleep(0.5)
             self._send_json({"error": "Wrong secret."}, 401)
             return
-        if not emailer.configured():
-            self._send_json({"error": "Email reminders are not switched on."}, 404)
-            return
-        self._send_json(autoreminders.run(self._site_url()))
+        result = {"classes_closed": close_stale_classes()}
+        if emailer.configured():
+            result.update(autoreminders.run(self._site_url()))
+        self._send_json(result)
 
     def _handle_notes(self, session: dict, data: dict) -> None:
         """Every finished class's session notes, for the Notes tab."""
@@ -2675,18 +2776,7 @@ class Handler(BaseHTTPRequestHandler):
             tz_offset = int(data.get("tz_offset") or 0)
         except (TypeError, ValueError):
             tz_offset = 0
-        numbers = store.progress_for(student["student_id"], tz_offset)
-        memory = tutor.load_student(student["student_id"])
-        words = memory.get("vocab_acquired_log") or []
-        numbers.update({
-            "name": student["display_name"],
-            "words_learned": len(words),
-            "recent_words": [w.split(" — ")[0] for w in words[-6:]][::-1],
-            "grammar_covered": (memory.get("grammar_covered") or [])[-5:][::-1],
-            "working_on": (memory.get("recurring_error_patterns") or [])[:5],
-            "next_recommendation": memory.get("next_recommendation") or "",
-        })
-        self._send_json(numbers)
+        self._send_json(progress_payload(student, tz_offset))
 
     def _handle_end(self, session: dict, data: dict) -> None:
         # Accept an explicit call_id so a class can be closed and reported on
@@ -2745,10 +2835,20 @@ class Handler(BaseHTTPRequestHandler):
             students.sort(key=lambda f: f["reminder"]["kind"] not in reminders.KINDS_THAT_SEND)
             self._send_json({"students": students, "site_url": site})
         elif action == "run_reminders":
-            if not emailer.configured():
-                self._send_json({"error": "Email is not set up yet (RESEND_API_KEY and JUNO_EMAIL_FROM)."}, 400)
+            result = {"classes_closed": close_stale_classes()}
+            if emailer.configured():
+                result.update(autoreminders.run(self._site_url()))
+            self._send_json(result)
+        elif action == "progress":
+            student = store.get_student(str(data.get("student_id") or ""))
+            if not student:
+                self._send_json({"error": "No such student."}, 404)
                 return
-            self._send_json(autoreminders.run(self._site_url()))
+            try:
+                tz_offset = int(data.get("tz_offset") or 0)
+            except (TypeError, ValueError):
+                tz_offset = 0
+            self._send_json(progress_payload(student, tz_offset))
         elif action == "create":
             name = (data.get("name") or "").strip()
             if not name:
@@ -2808,16 +2908,7 @@ class Handler(BaseHTTPRequestHandler):
         """
         try:
             for call in store.open_calls_for(student_id):
-                if call["turns"] < 2:
-                    store.abandon_call(call["call_id"])
-                    continue
-                report = tutor.generate_report(client, call["transcript"])
-                memory = tutor.load_student(student_id)
-                memory = tutor.apply_report_to_student(
-                    memory, report, call["mode"],
-                    {"id": call["scenario_id"]} if call["scenario_id"] else None)
-                tutor.save_student(memory)
-                store.finish_call(call["call_id"], report)
+                fold_unfinished_class(call)
         except Exception as e:  # noqa: BLE001
             print(f"[juno] could not close an old class (new class unaffected): {e!r}",
                   file=sys.stderr, flush=True)
