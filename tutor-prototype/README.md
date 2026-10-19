@@ -228,6 +228,17 @@ no name, no key: a log carrying class content would be a second copy of the
 student's data somewhere nobody is guarding. Visible in Render's log viewer,
 and greppable for `"event": "turn"`.
 
+### Tap a word, hear the answer
+
+Asked for by students in class. Every word Juno says (the big line and the
+transcript) can be tapped: a card shows what it means in Spanish in that
+sentence, with a short example and a button to hear it (`/api/define`; capped
+at 80 lookups a day per browser, and a repeated word in the same sentence is
+answered from memory). Help me now returns its suggested answers separately,
+each with a button to hear it said slowly before the student says it
+themselves. The access code ignores capitals and spaces, and the level list
+names each level in Spanish.
+
 ### Pauses, speed and easier English
 
 Three things a student can change for themselves, remembered on their device:

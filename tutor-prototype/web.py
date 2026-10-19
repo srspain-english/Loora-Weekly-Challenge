@@ -67,12 +67,29 @@ MAX_HELP_PER_CALL = 15
 HELP_SYSTEM = (
     "A Spanish-speaking adult is in a live English conversation class with an "
     "AI teacher called Juno. They pressed 'Help me' because they don't know "
-    "how to answer. Reply in Spanish, in plain text with no markdown, in under "
-    "90 words:\n"
-    "1. What Juno just said or asked, explained simply.\n"
-    "2. One or two short answers in English they could say, suited to CEFR "
-    "level {level}, each followed by its meaning in Spanish in brackets.\n"
+    "how to answer. Reply in plain text with no markdown, in under 90 words, "
+    "in exactly this shape:\n"
+    "First, one or two short sentences in Spanish saying what Juno just said "
+    "or asked, explained simply.\n"
+    "Then two lines, each starting with >> : a short answer in English the "
+    "student could say, suited to CEFR level {level}, then || and its meaning "
+    "in Spanish. For example:\n"
+    ">> I went to the gym this morning. || Fui al gimnasio esta mañana.\n"
     "Don't correct the student and don't continue the conversation yourself."
+)
+
+# Tapping a word Juno said. Capped per day per browser: each tap is a paid
+# request, and the same word in the same sentence is answered from memory.
+MAX_LOOKUPS_PER_DAY = 80
+DEFINE_CACHE: dict[tuple[str, str], dict] = {}
+DEFINE_SYSTEM = (
+    "A Spanish-speaking adult learning English tapped a word in something their "
+    "English teacher said, to understand it. Reply in plain text with no "
+    "markdown, in exactly two lines.\n"
+    "Line 1: what it means in Spanish as used in this sentence, in a few words. "
+    "If the word is part of a phrase (like 'make sense' or 'get up to speed'), "
+    "give the whole phrase and its meaning.\n"
+    "Line 2: one very short, simple English example sentence using it."
 )
 
 # Per-browser-session state, keyed by a random cookie value. Necessary as
@@ -265,10 +282,10 @@ INDEX_HTML = """<!doctype html>
   .heard{margin-top:6px;font-size:15px;color:var(--ink);min-height:22px;max-width:100%}
 
   /* Help or typing open: make room by shrinking the orb and Juno's line. */
-  #chat-screen:has(#help-card:not([hidden])) #mic-btn, #chat-screen:has(#type-row:not([hidden])) #mic-btn{--orb:clamp(76px,12vh,116px)}
-  #chat-screen:has(#help-card:not([hidden])) #mic-btn::before, #chat-screen:has(#type-row:not([hidden])) #mic-btn::before{inset:-12px}
-  #chat-screen:has(#help-card:not([hidden])) .juno-line, #chat-screen:has(#type-row:not([hidden])) .juno-line{font-size:22px;line-height:1.3;max-height:20vh;margin-bottom:22px}
-  #chat-screen:has(#help-card:not([hidden])) .orb-state, #chat-screen:has(#type-row:not([hidden])) .orb-state{margin-top:14px}
+  #chat-screen:has(#help-card:not([hidden])) #mic-btn, #chat-screen:has(#word-card:not([hidden])) #mic-btn, #chat-screen:has(#type-row:not([hidden])) #mic-btn{--orb:clamp(76px,12vh,116px)}
+  #chat-screen:has(#help-card:not([hidden])) #mic-btn::before, #chat-screen:has(#word-card:not([hidden])) #mic-btn::before, #chat-screen:has(#type-row:not([hidden])) #mic-btn::before{inset:-12px}
+  #chat-screen:has(#help-card:not([hidden])) .juno-line, #chat-screen:has(#word-card:not([hidden])) .juno-line, #chat-screen:has(#type-row:not([hidden])) .juno-line{font-size:22px;line-height:1.3;max-height:20vh;margin-bottom:22px}
+  #chat-screen:has(#help-card:not([hidden])) .orb-state, #chat-screen:has(#word-card:not([hidden])) .orb-state, #chat-screen:has(#type-row:not([hidden])) .orb-state{margin-top:14px}
   .help-card{
     background:var(--surface-2);border:1px solid var(--accent-line);border-radius:16px;
     padding:14px 16px;margin-top:10px;font-size:15px;line-height:1.5;color:var(--ink);
@@ -276,6 +293,14 @@ INDEX_HTML = """<!doctype html>
   }
   .help-head{display:flex;align-items:center;justify-content:space-between;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent-hi);margin-bottom:6px}
   #help-text{white-space:pre-line}
+  .w{cursor:pointer;border-radius:5px;transition:background .15s ease}
+  .w:hover, .w.picked{background:rgba(155,124,255,.28)}
+  .tap-hint{margin:-18px 0 14px;font-size:12.5px;color:var(--muted);letter-spacing:.02em}
+  .say-row{display:flex;align-items:flex-start;gap:10px;margin-top:10px;white-space:normal}
+  .say-row .play-btn{width:36px;height:36px;font-size:13px;background:var(--accent);color:#fff;border:none}
+  .say-row strong{display:block;color:var(--ink)}
+  .say-row span{display:block;color:var(--ink-soft);font-size:14px}
+  #word-text .example{margin-top:6px;color:var(--ink-soft);font-style:italic}
 
   .transcript{
     flex:1 1 0;min-height:0;overflow-y:auto;margin-top:10px;padding:4px 2px;
@@ -524,10 +549,10 @@ INDEX_HTML = """<!doctype html>
     <div class="panel" style="margin-top:6px">
       <label for="level">Level</label>
       <select id="level">
-        <option value="A2">A2</option>
-        <option value="B1" selected>B1</option>
-        <option value="B2">B2</option>
-        <option value="C1">C1</option>
+        <option value="A2">A2 · Básico</option>
+        <option value="B1" selected>B1 · Intermedio</option>
+        <option value="B2">B2 · Intermedio alto</option>
+        <option value="C1">C1 · Avanzado</option>
       </select>
 
       <div id="scenario-row" style="display:none">
@@ -563,6 +588,7 @@ INDEX_HTML = """<!doctype html>
 
     <div class="stage">
       <p class="juno-line" id="juno-line" aria-live="polite"></p>
+      <p class="tap-hint" id="tap-hint" hidden>Toca cualquier palabra para ver qué significa</p>
       <button id="mic-btn" aria-label="Tap to talk" title="Tap to talk">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
       </button>
@@ -573,6 +599,11 @@ INDEX_HTML = """<!doctype html>
     <div class="help-card" id="help-card" hidden>
       <div class="help-head"><span>Ayuda</span><button class="link" id="help-close">Cerrar</button></div>
       <div id="help-text"></div>
+    </div>
+
+    <div class="help-card" id="word-card" hidden>
+      <div class="help-head"><span id="word-title"></span><button class="link" id="word-close">Cerrar</button></div>
+      <div id="word-text"></div>
     </div>
 
     <div class="transcript" id="chat-log"></div>
@@ -730,17 +761,41 @@ let junoLine = '';
 // Juno sometimes marks a correction with **double asterisks**. On screen
 // that part is highlighted; out loud the symbols are dropped, or the
 // voice reads them as "asterisk".
-function fillRich(el, text) {
+function isWordChar(ch) {
+  return ch.toLowerCase() !== ch.toUpperCase() || ch === "'" || ch === '’' || ch === '-';
+}
+
+// Each word becomes something the student can tap to see what it means.
+function appendWords(parent, text) {
+  let word = '';
+  let rest = '';
+  const flushWord = () => {
+    if (!word) return;
+    if (word.split('').some((c) => c.toLowerCase() !== c.toUpperCase())) {
+      const span = document.createElement('span');
+      span.className = 'w';
+      span.textContent = word;
+      parent.appendChild(span);
+    } else {
+      parent.appendChild(document.createTextNode(word));
+    }
+    word = '';
+  };
+  const flushRest = () => { if (rest) { parent.appendChild(document.createTextNode(rest)); rest = ''; } };
+  for (const ch of text) {
+    if (isWordChar(ch)) { flushRest(); word += ch; } else { flushWord(); rest += ch; }
+  }
+  flushWord();
+  flushRest();
+}
+
+function fillRich(el, text, tappable) {
   el.textContent = '';
   text.split('**').forEach((part, i) => {
     const clean = part.replace(/[*#`]/g, '');
-    if (i % 2) {
-      const b = document.createElement('strong');
-      b.textContent = clean;
-      el.appendChild(b);
-    } else {
-      el.appendChild(document.createTextNode(clean));
-    }
+    const target = i % 2 ? document.createElement('strong') : el;
+    if (tappable) appendWords(target, clean); else target.appendChild(document.createTextNode(clean));
+    if (target !== el) el.appendChild(target);
   });
 }
 function speakable(text) {
@@ -755,7 +810,7 @@ function addLine(who, text) {
   name.textContent = who === 'juno' ? 'Juno' : 'You';
   const body = document.createElement('span');
   body.className = 'text';
-  fillRich(body, text);
+  fillRich(body, text, who === 'juno');
   row.append(name, body);
   const log = $('chat-log');
   log.appendChild(row);
@@ -764,7 +819,7 @@ function addLine(who, text) {
 
 function setJunoLine(text, waiting) {
   const el = $('juno-line');
-  fillRich(el, text);
+  fillRich(el, text, !waiting);
   el.classList.toggle('long', text.length > 110 && text.length <= 220);
   el.classList.toggle('longer', text.length > 220);
   el.classList.toggle('waiting', !!waiting);
@@ -822,6 +877,10 @@ function startClass(mode) {
   clearInterval(clockTimer);
   clockTimer = setInterval(drawClock, 1000);
   drawClock();
+  $('word-card').hidden = true;
+  let tapped = false;
+  try { tapped = localStorage.getItem('juno_tapped_word') === '1'; } catch (e) { tapped = false; }
+  $('tap-hint').hidden = tapped;
   show('chat-screen');
   idleOrb();
 }
@@ -1254,6 +1313,83 @@ $('pause-btn').onclick = () => {
 };
 
 let helpLoading = false;
+// Say something once, for the student to hear and repeat. Unlike Juno's turn,
+// this never opens the microphone afterwards.
+function sayAloud(text) {
+  if (!window.speechSynthesis) return;
+  if (micBusy) { cancelListening(); idleOrb(); }
+  clearTimeout(autoTimer);
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(speakable(text));
+  u.lang = 'en-US';
+  u.rate = Math.min(VOICE_RATES[$('voice-speed').value] || VOICE_RATES.normal, 0.85);
+  const voice = pickVoice(cachedVoices.length ? cachedVoices : window.speechSynthesis.getVoices());
+  if (voice) u.voice = voice;
+  window.speechSynthesis.speak(u);
+}
+
+function playButton(text, label) {
+  const btn = make('button', 'play-btn', '▶');
+  btn.setAttribute('aria-label', label || 'Listen');
+  btn.onclick = () => sayAloud(text);
+  return btn;
+}
+
+let wordLoading = false;
+async function lookUpWord(span) {
+  if (wordLoading) return;
+  const word = span.textContent;
+  const sentence = (span.closest('#juno-line, .text') || span).textContent;
+  document.querySelectorAll('.w.picked').forEach((w) => w.classList.remove('picked'));
+  span.classList.add('picked');
+  try { localStorage.setItem('juno_tapped_word', '1'); } catch (e) { /* hint shows again */ }
+  $('tap-hint').hidden = true;
+  if (micBusy) { cancelListening(); idleOrb(); }
+  clearTimeout(autoTimer);
+  $('word-title').textContent = word;
+  $('word-text').textContent = 'Un momento…';
+  $('word-card').hidden = false;
+  wordLoading = true;
+  try {
+    const data = await api('/api/define', { word, sentence });
+    const box = $('word-text');
+    box.textContent = '';
+    const row = make('div', 'say-row');
+    const text = make('div');
+    text.append(make('strong', '', data.meaning));
+    if (data.example) text.append(make('span', 'example', data.example));
+    row.append(playButton(data.example ? data.word + '. ' + data.example : data.word, 'Listen to ' + data.word), text);
+    box.append(row);
+  } catch (e) {
+    $('word-text').textContent = e.message;
+  } finally {
+    wordLoading = false;
+  }
+}
+document.addEventListener('click', (e) => {
+  const span = e.target.closest ? e.target.closest('.w') : null;
+  if (span && $('chat-screen').contains(span)) lookUpWord(span);
+});
+$('word-close').onclick = () => {
+  $('word-card').hidden = true;
+  document.querySelectorAll('.w.picked').forEach((w) => w.classList.remove('picked'));
+};
+
+function showHelp(data) {
+  const box = $('help-text');
+  if (!data.answers || !data.answers.length) { fillRich(box, data.help); return; }
+  box.textContent = '';
+  if (data.explanation) box.append(make('p', '', data.explanation));
+  data.answers.forEach((a) => {
+    const row = make('div', 'say-row');
+    const text = make('div');
+    text.append(make('strong', '', a.en));
+    if (a.es) text.append(make('span', '', a.es));
+    row.append(playButton(a.en, 'Listen'), text);
+    box.append(row);
+  });
+}
+
 $('help-btn').onclick = async () => {
   if (helpLoading || paused) return;
   clearTimeout(autoTimer);
@@ -1266,7 +1402,7 @@ $('help-btn').onclick = async () => {
     const data = await api('/api/help', {}, {
       onWaking: () => { $('help-text').textContent = 'Juno se está despertando, un momento…'; },
     });
-    fillRich($('help-text'), data.help);
+    showHelp(data);
   } catch (e) {
     $('help-text').textContent = e.message;
   } finally {
@@ -2427,6 +2563,9 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/help":
                 self._require_auth(session)
                 self._handle_help(session, data)
+            elif self.path == "/api/define":
+                self._require_auth(session)
+                self._handle_define(session, data)
             else:
                 self._send_json({"error": "not found"}, 404)
         except _AuthError:
@@ -2458,7 +2597,11 @@ class Handler(BaseHTTPRequestHandler):
             session["authed"] = True
             self._send_json({"ok": True})
             return
-        if secrets.compare_digest(str(data.get("passphrase") or ""), ACCESS_PASSPHRASE):
+        def norm(text: str) -> bytes:
+            # "SR 2026", "sr2026 " and "Sr2026" are all what the teacher said.
+            return "".join(str(text).split()).casefold().encode("utf-8")
+
+        if secrets.compare_digest(norm(data.get("passphrase") or ""), norm(ACCESS_PASSPHRASE)):
             session["authed"] = True
             self._send_json({"ok": True})
         else:
@@ -2961,7 +3104,66 @@ class Handler(BaseHTTPRequestHandler):
             text = ("Ahora mismo no puedo ayudarte con esto. "
                     "Intenta responder con una frase sencilla.")
         session["help_used"][call["call_id"]] = used + 1
-        self._send_json({"help": text})
+        explanation, answers = [], []
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith(">>"):
+                english, _, spanish = line[2:].partition("||")
+                if english.strip():
+                    answers.append({"en": english.strip(), "es": spanish.strip()})
+            elif line:
+                explanation.append(line)
+        self._send_json({"help": text, "explanation": " ".join(explanation), "answers": answers[:3]})
+
+    def _handle_define(self, session: dict, data: dict) -> None:
+        """What one word Juno said means, in Spanish, with a short example."""
+        call = self._current_call(session)
+        if not call:
+            self._send_json({"error": "No class in progress."}, 400)
+            return
+        word = "".join(c for c in str(data.get("word") or "") if c.isalpha() or c in "'’-")
+        word = word.strip("'’-")[:40]
+        if not word:
+            self._send_json({"error": "No word to look up."}, 400)
+            return
+        sentence = " ".join(str(data.get("sentence") or "").split())[:300]
+        key = (word.lower(), sentence.lower())
+        if key in DEFINE_CACHE:
+            self._send_json(DEFINE_CACHE[key])
+            return
+        if (store.DAILY_COST_CEILING_USD > 0
+                and store.daily_spend() >= store.DAILY_COST_CEILING_USD):
+            self._send_json({"error": "Juno has reached today's usage limit. "
+                                      "Please try again tomorrow."}, 429)
+            return
+        counts = session.setdefault("lookups", {})
+        today = store._today()
+        if counts.get(today, 0) >= MAX_LOOKUPS_PER_DAY:
+            self._send_json({"error": "Has consultado muchas palabras hoy. "
+                                      "Pregúntale a Juno: What does it mean?"}, 429)
+            return
+        response = client.beta.messages.create(
+            model=tutor.MODEL,
+            max_tokens=300,
+            system=DEFINE_SYSTEM,
+            messages=[{"role": "user", "content": f"Sentence: {sentence}\nWord tapped: {word}"}],
+            output_config={"effort": "low"},
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
+        self._record_metrics(response, student_id=call["student_id"],
+                             call_id=call["call_id"], kind="define")
+        counts[today] = counts.get(today, 0) + 1
+        text = next((b.text for b in response.content if b.type == "text"), "").strip()
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if response.stop_reason == "refusal" or not lines:
+            self._send_json({"error": "Ahora mismo no puedo explicar esta palabra."}, 502)
+            return
+        result = {"word": word, "meaning": lines[0], "example": lines[1] if len(lines) > 1 else ""}
+        if len(DEFINE_CACHE) > 2000:
+            DEFINE_CACHE.clear()
+        DEFINE_CACHE[key] = result
+        self._send_json(result)
 
     def _handle_abandon(self, session: dict, data: dict) -> None:
         call = self._current_call(session)
