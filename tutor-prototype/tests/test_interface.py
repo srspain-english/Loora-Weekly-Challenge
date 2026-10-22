@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""Tests for what the page itself offers the student.
+
+The interface is one HTML string, so these check it is served with the pieces
+the student-facing fixes depend on. They are shallow by nature — no browser
+here — but they catch the failure that actually happens: an element renamed
+or dropped while editing the page, leaving the JavaScript that drives it
+silently pointing at nothing.
+"""
+
+from __future__ import annotations
+
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+import urllib.request
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import web  # noqa: E402
+from helpers import ServerTestCase  # noqa: E402
+
+
+class PageTest(ServerTestCase, unittest.TestCase):
+    def setUp(self) -> None:
+        self.opener = self.new_browser()
+        web.ACCESS_PASSPHRASE = ""
+        web.SESSIONS.clear()
+        with urllib.request.urlopen(f"{self.base_url}/") as resp:
+            self.html = resp.read().decode("utf-8")
+
+    def test_distinguishes_waking_from_offline_from_broken(self) -> None:
+        # Three different situations that used to look identical to a student.
+        self.assertIn("waking up", self.html)
+        self.assertIn("offline", self.html)
+        self.assertIn("'network'", self.html)
+
+    def test_shows_when_the_class_was_last_saved(self) -> None:
+        self.assertIn('id="chat-status"', self.html)
+        self.assertIn("showSaved", self.html)
+        self.assertIn("Saved ", self.html)
+
+    def test_warns_before_leaving_a_class_in_progress(self) -> None:
+        self.assertIn("beforeunload", self.html)
+
+    def test_offers_to_recover_an_unfinished_class(self) -> None:
+        self.assertIn('id="resume-notice"', self.html)
+        self.assertIn("/api/resume", self.html)
+        # And the three things a student might want to do with it.
+        self.assertIn('id="resume-btn"', self.html)
+        self.assertIn('id="resume-report-btn"', self.html)
+        self.assertIn('id="resume-discard-btn"', self.html)
+
+    def test_mic_starts_on_a_real_tap(self) -> None:
+        # The HTML standard only counts a finished tap (touchend) or a click
+        # as the user really acting; touchstart isn't one. Starting the mic
+        # from touchstart was the suspected cause of the silent red button
+        # on iPhone.
+        self.assertIn("micBtn.addEventListener('click'", self.html)
+        self.assertNotIn("addEventListener('touchstart'", self.html)
+
+    def test_mic_never_looks_dead(self) -> None:
+        # Safari can accept start() and then report nothing, or hear the
+        # words and never finish. The tap must show something at once, a
+        # silent failure must become a message, and heard words must still
+        # be sent when the browser never says it has finished.
+        self.assertIn("Starting the microphone…", self.html)
+        self.assertIn("finish('no-start')", self.html)
+        self.assertIn("SILENCE_MS", self.html)
+        self.assertIn("cancelListening();", self.html)
+
+    def test_hands_free_listens_after_juno_speaks(self) -> None:
+        # The mic switches on by itself once Juno has finished, with a
+        # switch to turn that off, and falls back to tapping quietly where
+        # the browser won't allow it.
+        self.assertIn('id="handsfree-toggle"', self.html)
+        self.assertIn("function autoListen(", self.html)
+        self.assertIn("if (!speak(data.reply)) autoListen();", self.html)
+        self.assertIn("autoListenBlocked = true;", self.html)
+
+    def test_a_thinking_pause_does_not_send_half_a_sentence(self) -> None:
+        # Chrome ended listening at the first ~1 s pause. Where it works,
+        # it now keeps listening, and Juno waits for 4 s of silence.
+        self.assertIn("recognition.continuous = keepListening;", self.html)
+        self.assertIn("const SILENCE_MS = 4000;", self.html)
+        self.assertIn("tap when you’re done", self.html)
+
+    def test_session_notes_follow_the_juno2_design(self) -> None:
+        self.assertIn("Session notes", self.html)
+        self.assertIn("Task for your next conversation", self.html)
+        self.assertIn("Better expressions", self.html)
+        # The report is built from text nodes, never pasted in as HTML.
+        self.assertNotIn("el.innerHTML = `", self.html)
+
+    def test_says_when_it_is_the_students_turn(self) -> None:
+        self.assertIn("Your turn — tap to talk", self.html)
+
+    def test_voice_never_reads_formatting_symbols(self) -> None:
+        # Juno marks corrections with **double asterisks**, and the voice
+        # read them out as "asterisk". They are stripped before speaking and
+        # shown as a highlight on screen instead.
+        self.assertIn("new SpeechSynthesisUtterance(speakable(text))", self.html)
+        self.assertIn("text.split('**')", self.html)
+
+    def test_mic_says_why_it_failed(self) -> None:
+        # Shows the words as they are spoken, and the reason when it fails,
+        # instead of failing silently.
+        self.assertIn("recognition.interimResults = true", self.html)
+        self.assertIn("recognition.onerror = (e) => { voiceError = e.error; }", self.html)
+        self.assertIn("The microphone is blocked for this site", self.html)
+
+    def test_mic_shows_that_it_is_recording(self) -> None:
+        self.assertIn("#mic-btn.recording", self.html)
+
+    def test_report_generation_has_a_visible_state(self) -> None:
+        self.assertIn("Writing your report", self.html)
+
+    def test_the_very_first_auth_check_shows_waking_up_too(self) -> None:
+        # Reported as "Juno doesn't load" on a cold Render instance: the
+        # silent empty-passphrase probe that fires on every page load, before
+        # the student touches anything, was the one call in the file that
+        # never passed onWaking - so a slow cold start left the static
+        # "Loading…" text frozen on screen with zero feedback for up to a
+        # minute, which is indistinguishable from broken. Every other call
+        # already had this; this one needs it even more, since it's the
+        # first thing that runs.
+        self.assertIn("onWaking: () => { $('lede').textContent", self.html)
+
+    def test_actions_cannot_be_fired_twice(self) -> None:
+        self.assertIn("if (sending) return;", self.html)
+        self.assertIn("if ($('start-btn').disabled) return;", self.html)
+        self.assertIn("if ($('end-btn').disabled) return;", self.html)
+
+    def test_messages_carry_an_idempotency_key(self) -> None:
+        self.assertIn("idempotency_key", self.html)
+
+    def test_privacy_notice_answers_the_five_questions(self) -> None:
+        # What is kept, what for, who sees it, what not to type, how to delete.
+        self.assertIn("What Juno saves about you", self.html)
+        self.assertIn("What it keeps", self.html)
+        self.assertIn("What it is for", self.html)
+        self.assertIn("Who can see it", self.html)
+        self.assertIn("do not type confidential information", self.html)
+        self.assertIn("deleted", self.html)
+
+    def test_offers_a_personal_code_field(self) -> None:
+        self.assertIn('id="student-code"', self.html)
+
+    def test_uses_the_juno2_palette_and_keeps_the_typefaces(self) -> None:
+        # Cream and purple, like the Juno 2.0 design; the class screen stays
+        # dark. S&R orange survives only as the small brand dot.
+        self.assertIn("--accent:#5B2BD6", self.html)
+        self.assertIn("--brand:#FF4A1C", self.html)
+        self.assertIn("Space+Grotesk", self.html)
+        self.assertIn("Instrument+Sans", self.html)
+
+    def test_start_screen_cards_do_not_follow_you_into_class(self) -> None:
+        # The "Last time" card stayed on screen during class and pushed the
+        # Pause / Help / End buttons off the bottom.
+        # (Now they live inside the Today screen, which is hidden in class.)
+        today = self.html.index('id="today-screen"')
+        practice = self.html.index('id="practice-screen"')
+        self.assertTrue(today < self.html.index('id="last-time"') < practice)
+        self.assertTrue(today < self.html.index('id="resume-notice"') < practice)
+        self.assertIn("$('again-btn').onclick = () => goTab('today');", self.html)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_page_script_has_no_syntax_errors(self) -> None:
+        # A repeated `const` or a stray bracket stops the whole script, so the
+        # page loads and then does nothing - and none of the checks above, which
+        # only look for text, would notice.
+        scripts = re.findall(r"<script>(.*?)</script>", self.html, re.S)
+        self.assertTrue(scripts)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "page.js"
+            path.write_text("\n".join(scripts), encoding="utf-8")
+            result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_students_who_pause_a_lot_can_make_juno_wait(self) -> None:
+        # Reported: "I do many pauses and Juno won't let me finish." Safari and
+        # iPhone end listening at the first pause, so the pieces are stitched
+        # together; the wait itself is the student's to choose.
+        self.assertIn('id="patience"', self.html)
+        self.assertIn("tap: Infinity", self.html)
+        self.assertIn("function stitch()", self.html)
+        self.assertIn("recognition.onend = () => {", self.html)
+
+    def test_juno_speaks_slower_by_default_and_the_speed_is_the_students(self) -> None:
+        self.assertIn('id="voice-speed"', self.html)
+        self.assertIn("normal: 0.9", self.html)
+        self.assertIn("u.rate = VOICE_RATES[$('voice-speed').value]", self.html)
+        self.assertNotIn("u.rate = 1;", self.html)
+
+    def test_students_can_ask_for_easier_english(self) -> None:
+        self.assertIn('id="easier"', self.html)
+        self.assertIn("easier: $('easier').checked", self.html)
+
+    def test_has_four_tabs_each_with_a_screen(self) -> None:
+        for tab, screen in (("today", "today-screen"), ("practice", "practice-screen"),
+                            ("progress", "progress-screen"), ("notes", "notes-screen")):
+            self.assertIn(f'data-tab="{tab}"', self.html)
+            self.assertIn(f'id="{screen}"', self.html)
+        # The class itself has no tab bar.
+        self.assertIn("document.body.classList.toggle('has-tabs', id in TAB_OF);", self.html)
+        self.assertNotIn("'chat-screen': ", self.html.split("const TAB_OF")[1].split("};")[0])
+
+    def test_remembers_the_student_on_this_device(self) -> None:
+        self.assertIn("juno_identity", self.html)
+        self.assertIn("function restoreIdentity(", self.html)
+        self.assertIn('id="profile-card"', self.html)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_teacher_page_script_has_no_syntax_errors(self) -> None:
+        scripts = re.findall(r"<script>(.*?)</script>", web.ADMIN_HTML, re.S)
+        self.assertTrue(scripts)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "admin.js"
+            path.write_text("\n".join(scripts), encoding="utf-8")
+            result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_teacher_page_never_pastes_student_text_in_as_html(self) -> None:
+        # Names and phone numbers are typed by students and the teacher.
+        self.assertNotIn("innerHTML", web.ADMIN_HTML)
+
+    def test_class_screen_has_pause_help_and_typing(self) -> None:
+        for el in ('id="pause-btn"', 'id="help-btn"', 'id="end-btn"',
+                   'id="type-toggle"', 'id="call-clock"', 'id="juno-line"',
+                   "/api/help"):
+            self.assertIn(el, self.html)
+
+
+if __name__ == "__main__":
+    unittest.main()
