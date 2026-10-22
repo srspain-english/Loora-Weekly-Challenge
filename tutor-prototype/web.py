@@ -555,6 +555,13 @@ INDEX_HTML = """<!doctype html>
         <option value="C1">C1 · Avanzado</option>
       </select>
 
+      <label for="length">Length</label>
+      <select id="length">
+        <option value="6" selected>6 minutes</option>
+        <option value="10">10 minutes</option>
+        <option value="0">No limit</option>
+      </select>
+
       <div id="scenario-row" style="display:none">
         <label for="scenario">Scenario <span class="hint">(optional — random if left as "Surprise me")</span></label>
         <select id="scenario"><option value="">Surprise me</option></select>
@@ -860,13 +867,26 @@ function idleOrb() {
 
 const MODE_NAMES = { free: 'Free talk', business: 'Business English', structured: 'Structured class' };
 let clockStart = 0, clockPausedTotal = 0, pausedAt = 0, clockTimer = null;
+function elapsedMs() {
+  return (pausedAt || Date.now()) - clockStart - clockPausedTotal;
+}
 function drawClock() {
-  const now = pausedAt || Date.now();
-  const s = Math.max(0, Math.floor((now - clockStart - clockPausedTotal) / 1000));
-  $('call-clock').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const ms = Math.max(0, elapsedMs());
+  const shown = classLimitMs ? Math.max(0, classLimitMs - ms) : ms;
+  const s = Math.floor(shown / 1000);
+  $('call-clock').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` + (classLimitMs ? ' left' : '');
+  if (classLimitMs && ms >= classLimitMs && !timeUpShown && classInProgress) {
+    timeUpShown = true;
+    setStatus('chat-status', 'Time is up: answer once more and Juno will close the conversation.', 'saved');
+  }
 }
 function startClass(mode) {
   $('call-label').textContent = 'Juno · ' + (MODE_NAMES[mode] || MODE_NAMES.free);
+  typingChosen = !voiceAvailable;
+  classLimitMs = (Number($('length').value) || 0) * 60000;
+  wrapUpSent = false;
+  timeUpShown = false;
+  endAfterSpeaking = false;
   paused = false;
   $('pause-btn').textContent = 'Pause';
   $('mic-btn').disabled = false;
@@ -898,7 +918,8 @@ function openTyping() {
   $('msg-input').focus();
 }
 $('type-toggle').onclick = () => {
-  if ($('type-row').hidden) { openTyping(); return; }
+  if ($('type-row').hidden) { openTyping(); typingChosen = true; return; }
+  typingChosen = false;
   $('type-row').hidden = true;
   $('type-toggle').textContent = 'Type instead';
   autoListen();
@@ -998,6 +1019,7 @@ function savePrefs() {
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify({
       speed: $('voice-speed').value, wait: $('patience').value, easier: $('easier').checked,
+      length: $('length').value,
     }));
   } catch (e) { /* private window: settings last until the tab closes */ }
 }
@@ -1006,8 +1028,14 @@ function savePrefs() {
   if (VOICE_RATES[saved.speed]) $('voice-speed').value = saved.speed;
   if (['normal', 'long', 'tap'].includes(saved.wait)) $('patience').value = saved.wait;
   $('easier').checked = !!saved.easier;
-  ['voice-speed', 'patience', 'easier'].forEach((id) => $(id).addEventListener('change', savePrefs));
+  if (['6', '10', '0'].includes(saved.length)) $('length').value = saved.length;
+  ['voice-speed', 'patience', 'easier', 'length'].forEach((id) => $(id).addEventListener('change', savePrefs));
 })();
+
+function endAfterGoodbye() {
+  endAfterSpeaking = false;
+  if (classInProgress && !$('end-btn').disabled) $('end-btn').onclick();
+}
 
 function speak(text) {
   if (!$('speak-toggle').checked || !window.speechSynthesis || paused) return false;
@@ -1022,6 +1050,7 @@ function speak(text) {
   u.onend = u.onerror = () => {
     if (micBusy || sending) return;
     idleOrb();
+    if (endAfterSpeaking) { endAfterGoodbye(); return; }
     autoListen();
   };
   window.speechSynthesis.speak(u);
@@ -1155,9 +1184,11 @@ function setupVoiceInput() {
     }
     if (!said) { idleOrb(); return; }
     $('msg-input').value = said;
-    // With the typing box open the student may want to fix the words first;
-    // otherwise what they said goes straight to Juno, like a real call.
-    if ($('type-row').hidden) sendMessage(); else { idleOrb(); $('msg-input').focus(); }
+    // What they said goes straight to Juno, like a real call. Only a student
+    // who chose "Type instead" gets to check the words first: the box also
+    // opens by itself after a microphone hiccup, and that used to make every
+    // later answer wait for Send for the rest of the class.
+    if (!typingChosen) sendMessage(); else { idleOrb(); $('msg-input').focus(); }
   }
 
   cancelListening = () => {
@@ -1589,6 +1620,11 @@ $('start-btn').onclick = async () => {
 };
 
 let sending = false;
+let typingChosen = false;     // the student pressed "Type instead" themselves
+let classLimitMs = 0;         // 0 = no time limit
+let wrapUpSent = false;
+let timeUpShown = false;
+let endAfterSpeaking = false;
 let currentCallId = null;
 let classInProgress = false;
 
@@ -1614,14 +1650,20 @@ async function sendMessage() {
   $('chat-error').textContent = '';
   setOrb('thinking', 'Juno is thinking…');
   try {
-    const data = await api('/api/message', { text, idempotency_key: key },
+    const wrapUp = classLimitMs > 0 && elapsedMs() >= classLimitMs && !wrapUpSent;
+    const data = await api('/api/message', { text, idempotency_key: key, wrap_up: wrapUp },
       { onWaking: () => setStatus('chat-status',
           'Juno is waking up — one moment.', 'waking') });
     bubble('juno', data.reply);
     showSaved(data.saved_at);
     sending = false;
     idleOrb();
-    if (!speak(data.reply)) autoListen();
+    if (data.wrapped) {
+      // Juno has said goodbye: once it finishes speaking, the notes open.
+      wrapUpSent = true;
+      endAfterSpeaking = true;
+      if (!speak(data.reply)) setTimeout(endAfterGoodbye, 4000);
+    } else if (!speak(data.reply)) autoListen();
     if (data.turns_left !== undefined && data.turns_left <= 5) {
       $('chat-error').textContent =
         `${data.turns_left} messages left in this class — press End when you're ready for your report.`;
@@ -2618,23 +2660,39 @@ class Handler(BaseHTTPRequestHandler):
         this is one function instead of an inline call.
         """
         flat = "\n".join(b["text"] for b in system_blocks)
-        try:
-            response = client.messages.create(
-                model=tutor.MODEL, max_tokens=1024,
-                system=system_blocks, messages=messages,
-                cache_control={"type": "ephemeral"},
-            )
-        except anthropic.BadRequestError as e:
-            print(f"[juno] cache-shape rejected, retrying uncached: {e}",
-                  file=sys.stderr)
-            response = client.messages.create(
-                model=tutor.MODEL, max_tokens=1024,
-                system=flat, messages=messages,
-            )
 
+        def ask(model: str):
+            # Low effort: a conversational reply needs speed far more than
+            # deep reasoning, and the student is waiting in silence.
+            try:
+                return client.messages.create(
+                    model=model, max_tokens=2048,
+                    system=system_blocks, messages=messages,
+                    cache_control={"type": "ephemeral"},
+                    output_config={"effort": "low"},
+                )
+            except anthropic.BadRequestError as e:
+                print(f"[juno] cache-shape rejected, retrying uncached: {e}",
+                      file=sys.stderr)
+                return client.messages.create(
+                    model=model, max_tokens=2048,
+                    system=flat, messages=messages,
+                    output_config={"effort": "low"},
+                )
+
+        response = ask(tutor.TURN_MODEL)
         self._record_metrics(response, student_id=student_id, call_id=call_id,
                              kind=kind)
-        return next(b.text for b in response.content if b.type == "text")
+        text = next((b.text for b in response.content if b.type == "text"), "")
+        if response.stop_reason == "refusal" or not text.strip():
+            # The fast model declined or said nothing: ask the full model once
+            # rather than leave the student facing silence.
+            response = ask(tutor.MODEL)
+            self._record_metrics(response, student_id=student_id, call_id=call_id,
+                                 kind=kind)
+            text = next((b.text for b in response.content if b.type == "text"),
+                        "Sorry, could you say that again?")
+        return text
 
     def _record_metrics(self, response, *, student_id: str, call_id: str,
                         kind: str) -> None:
@@ -2767,6 +2825,10 @@ class Handler(BaseHTTPRequestHandler):
 
         student_id = call["student_id"]
         system_blocks = json.loads(call["system"])
+        wrap_up = bool(data.get("wrap_up"))
+        if wrap_up:
+            # For this turn only; the saved prompt is unchanged.
+            system_blocks = system_blocks + [{"type": "text", "text": tutor.WRAP_UP}]
         messages = call["transcript"] + [{"role": "user", "content": text}]
 
         reply = self._call_model(system_blocks, messages,
@@ -2782,6 +2844,7 @@ class Handler(BaseHTTPRequestHandler):
             "turns": turns,
             "turns_left": max(0, store.MAX_TURNS_PER_CALL - turns),
             "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "wrapped": wrap_up,
         }
         if key:
             store.remember_response(key, call["call_id"], payload)
@@ -3088,7 +3151,7 @@ class Handler(BaseHTTPRequestHandler):
         )
 
         response = client.beta.messages.create(
-            model=tutor.MODEL,
+            model=tutor.TURN_MODEL,
             max_tokens=2000,
             system=HELP_SYSTEM.format(level=call["level"]),
             messages=[{"role": "user",
@@ -3143,8 +3206,8 @@ class Handler(BaseHTTPRequestHandler):
                                       "Pregúntale a Juno: What does it mean?"}, 429)
             return
         response = client.beta.messages.create(
-            model=tutor.MODEL,
-            max_tokens=300,
+            model=tutor.TURN_MODEL,
+            max_tokens=1000,
             system=DEFINE_SYSTEM,
             messages=[{"role": "user", "content": f"Sentence: {sentence}\nWord tapped: {word}"}],
             output_config={"effort": "low"},

@@ -228,6 +228,27 @@ no name, no key: a log carrying class content would be a second copy of the
 student's data somewhere nobody is guarding. Visible in Render's log viewer,
 and greppable for `"event": "turn"`.
 
+### Fluency: fast replies, one correction at a time, a natural end
+
+From a student's feedback after a week of use:
+
+- **Spoken answers always go straight to Juno.** The typing box opens by
+  itself after a microphone hiccup, and used to make every later answer wait
+  for Send for the rest of the class. Now only a student who chose "Type
+  instead" checks their words first.
+- **One correction rule for every mode** (`CORRECTION_LIMIT` in `tutor.py`, in
+  the shared cached prompt): out loud, only mistakes that change the meaning or
+  tense/person mistakes, at most one per reply; everything else goes to the
+  report. Business scenarios' "correct my English throughout" notes no longer
+  override it.
+- **The conversation runs on a faster model** (`JUNO_TURN_MODEL`, default
+  `claude-sonnet-5-5`, at low effort); Help me and word lookups too. If it
+  ever declines, the turn is retried once on the full model. The end-of-call
+  report stays on the full model (`MODEL`).
+- **A length on the Practice screen** (6 minutes by default, 10, or no limit).
+  The clock counts down; the first answer after time is up gets a short
+  goodbye from Juno, and the notes open by themselves.
+
 ### Tap a word, hear the answer
 
 Asked for by students in class. Every word Juno says (the big line and the

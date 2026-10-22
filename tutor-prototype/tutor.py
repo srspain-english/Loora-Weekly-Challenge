@@ -29,6 +29,10 @@ from pathlib import Path
 import anthropic
 
 MODEL = "claude-opus-5"
+# The conversation itself runs on a faster model so the student is not left
+# waiting between turns; the end-of-call report keeps MODEL above, where depth
+# matters more than speed. Override with JUNO_TURN_MODEL.
+TURN_MODEL = os.environ.get("JUNO_TURN_MODEL", "claude-sonnet-5-5")
 BASE_DIR = Path(__file__).resolve().parent
 SCENARIOS_PATH = BASE_DIR / "scenarios.json"
 # Everything a student builds up over time lives here. Point it at a
@@ -116,12 +120,13 @@ LEVEL_RULES = {
     ),
     "B2": (
         "Correct meaning-breaking errors immediately; gentle recast anything that would "
-        "read as unprofessional in the scenario. Log minor slips silently rather than "
-        "interrupting. Speak at full native pace and push for specificity and complete "
+        "read as unprofessional in the scenario, within the limit on what to correct out "
+        "loud below. Log minor slips silently rather than interrupting. Speak at full native pace and push for specificity and complete "
         "sentences. Push for elaboration and opinion; introduce mild disagreement."
     ),
     "C1": (
-        "Correct throughout, including register and word choice, not just grammar. "
+        "Hold the student to a high standard of register and word choice, not just "
+        "grammar, mostly through the report; out loud, the limit below still applies. "
         "Push toward sophisticated, idiomatic phrasing. No simplification of your own "
         "language — treat the student as a colleague, not a learner. Use abstract, "
         "hypothetical, or consultative framing."
@@ -161,6 +166,26 @@ CORRECTION_TIERS = textwrap.dedent("""\
     Working rule: when genuinely unsure between Tier 1 and Tier 2, choose Tier 2. Under-
     correcting and catching it in the report is cheaper than making the conversation feel
     like an exam.
+""")
+
+# Students found constant correction broke the conversation ("te corrige todo,
+# no acabas siendo fluido"), and that Business English corrected far more than
+# Free talk. One rule, in the shared prompt, for every mode and level.
+CORRECTION_LIMIT = textwrap.dedent("""\
+    WHAT TO CORRECT OUT LOUD (this overrides every other instruction about how much
+    to correct, including the level rules above and any mode or scenario note below):
+    - Only two kinds of mistake are corrected during the conversation: one that
+      changes the meaning or would confuse a listener, and a tense or person
+      mistake (present instead of past, a missing third-person -s, a verb that does
+      not agree with its subject).
+    - At most one correction per reply, in one short line, then carry on with your
+      question. If there were two, choose the one that matters most.
+    - Everything else - articles, prepositions, word order, word choice, register,
+      small slips - is never said out loud. It goes into the end-of-call report.
+    - Never correct the same mistake twice in a row. If it comes back, simply use
+      the right form yourself in your next line.
+    - A scenario's correction note only says which mistakes matter most in that
+      situation, never how often to interrupt.
 """)
 
 SESSION_ARC = textwrap.dedent("""\
@@ -228,6 +253,7 @@ def stable_prefix(level: str) -> str:
         f"\nSTUDENT LEVEL: {level}\n{LEVEL_RULES[level]}",
         f"\nSPANISH USAGE POLICY: {SPANISH_POLICY[level]}",
         f"\nCORRECTION LAYER:\n{CORRECTION_TIERS}",
+        f"\n{CORRECTION_LIMIT}",
         f"\nSESSION ARC:\n{SESSION_ARC}",
         f"\nPRONUNCIATION POLICY:\n{PRONUNCIATION_POLICY}",
         "\nHOUSE STYLE for corrections: short and specific, the way S&R's own class "
@@ -236,6 +262,16 @@ def stable_prefix(level: str) -> str:
         "mistake' label. If the student produces a whole sentence with no Spanish "
         "reached for, that belongs in what went well.",
     ])
+
+
+# Added for one turn only, when the conversation length the student chose has
+# run out: Juno answers, closes, and the class ends with its notes.
+WRAP_UP = (
+    "\nTIME IS UP for this conversation. Reply to what the student just said in one "
+    "short sentence, then close warmly in one more: say it was good practice and that "
+    "they can start a new conversation whenever they like. Ask no new question - "
+    "this is your final goodbye."
+)
 
 
 # Opt-in from the student's Practice screen. It overrides the level rules'
@@ -266,11 +302,9 @@ def dynamic_context(level: str, mode: str, scenario: dict | None, student: dict,
         parts.append(
             "\nMODE: Free Conversation. No fixed objective beyond speaking time and "
             "comfort. This mode is relaxed about *topic*, not about correction — the "
-            "tier rules in the Correction Layer above still apply in full. A recurring "
-            "grammar pattern (tense, agreement, a repeated false friend) still gets a "
-            "Tier 2 gentle recast the moment you notice it, in the same turn, not saved "
-            "for the end-of-call report. Only genuinely minor, one-off slips (an article, "
-            "a small preposition) default to Tier 3 here. Follow the student's stated "
+            "Correction Layer and the limit on what to correct out loud apply in full. "
+            "A tense or agreement mistake still gets a short gentle recast in the same "
+            "turn; everything smaller goes to the end-of-call report. Follow the student's stated "
             "interests from their memory record rather than a script."
         )
     elif mode == "structured":
@@ -311,7 +345,9 @@ def dynamic_context(level: str, mode: str, scenario: dict | None, student: dict,
             f"Target expression: \"{scenario['expression']}\" ({scenario['title']}).\n"
             f"Your role: act as {scenario['role']}.\n"
             f"Question domain: {scenario['domain']}.\n"
-            f"Correction instruction for this scenario: {scenario['correction_instruction']}.\n"
+            f"Correction instruction for this scenario: {scenario['correction_instruction']} "
+            "(this says which mistakes matter most here; how often you correct out loud "
+            "still follows WHAT TO CORRECT OUT LOUD above).\n"
             f"Push instruction: {scenario['push_instruction']}.\n"
             f"Closing instruction: {scenario['closing_instruction']}.\n"
             "Stay in character as that role for the whole conversation. Work the target "
