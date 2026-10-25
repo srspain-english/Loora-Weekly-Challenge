@@ -2392,6 +2392,23 @@ $('create').onclick = async () => {
 client = anthropic.Anthropic()
 
 
+def log_timing(kind: str, *, ai: float, retried: bool,
+               database: float | None = None, total: float | None = None) -> None:
+    """One line per answer in the server log: where the seconds went. Times and
+    model only, never what anyone said."""
+    thinking = "off" if tutor.turn_thinking(tutor.TURN_MODEL) else "on"
+    parts = []
+    if database is not None:
+        parts.append(f"database {database:.2f} s")
+    parts.append(f"AI {ai:.2f} s")
+    if total is not None:
+        parts.append(f"total {total:.2f} s")
+    note = " · retried on the full model" if retried else ""
+    print(f"[juno] {kind} timing: {' · '.join(parts)} "
+          f"(model {tutor.TURN_MODEL}, thinking {thinking}){note}",
+          file=sys.stderr, flush=True)
+
+
 def fold_unfinished_class(call: dict) -> str:
     """Close a class the student never ended: write its report and fold what
     it taught into their memory, exactly as pressing End would have. A class
@@ -2661,37 +2678,45 @@ class Handler(BaseHTTPRequestHandler):
         """
         flat = "\n".join(b["text"] for b in system_blocks)
 
-        def ask(model: str):
-            # Low effort: a conversational reply needs speed far more than
-            # deep reasoning, and the student is waiting in silence.
+        def ask(model: str, fast: bool):
+            # Low effort, and for the fast model no separate thinking step: a
+            # conversational reply needs speed far more than deep reasoning,
+            # and the student is waiting in silence.
+            extra = {"output_config": {"effort": "low"}}
+            thinking = tutor.turn_thinking(model) if fast else None
+            if thinking:
+                extra["thinking"] = thinking
             try:
                 return client.messages.create(
                     model=model, max_tokens=2048,
                     system=system_blocks, messages=messages,
-                    cache_control={"type": "ephemeral"},
-                    output_config={"effort": "low"},
+                    cache_control={"type": "ephemeral"}, **extra,
                 )
             except anthropic.BadRequestError as e:
                 print(f"[juno] cache-shape rejected, retrying uncached: {e}",
                       file=sys.stderr)
                 return client.messages.create(
                     model=model, max_tokens=2048,
-                    system=flat, messages=messages,
-                    output_config={"effort": "low"},
+                    system=flat, messages=messages, **extra,
                 )
 
-        response = ask(tutor.TURN_MODEL)
+        started = time.monotonic()
+        response = ask(tutor.TURN_MODEL, fast=True)
         self._record_metrics(response, student_id=student_id, call_id=call_id,
                              kind=kind)
         text = next((b.text for b in response.content if b.type == "text"), "")
         if response.stop_reason == "refusal" or not text.strip():
             # The fast model declined or said nothing: ask the full model once
             # rather than leave the student facing silence.
-            response = ask(tutor.MODEL)
+            response = ask(tutor.MODEL, fast=False)
             self._record_metrics(response, student_id=student_id, call_id=call_id,
                                  kind=kind)
             text = next((b.text for b in response.content if b.type == "text"),
                         "Sorry, could you say that again?")
+            self.last_retried = True
+        else:
+            self.last_retried = False
+        self.last_ai_seconds = time.monotonic() - started
         return text
 
     def _record_metrics(self, response, *, student_id: str, call_id: str,
@@ -2775,6 +2800,7 @@ class Handler(BaseHTTPRequestHandler):
         reply = self._call_model(system_blocks, messages,
                                  student_id=student_id, call_id=call_id,
                                  kind="open")
+        log_timing("opening", ai=self.last_ai_seconds, retried=self.last_retried)
         messages.append({"role": "assistant", "content": reply})
         store.save_turn(call_id, messages, 0)
 
@@ -2804,6 +2830,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(replayed)
             return
 
+        turn_started = time.monotonic()
         call = self._current_call(session)
         if not call:
             self._send_json({"error": "No class in progress. Start one first."}, 400)
@@ -2831,13 +2858,18 @@ class Handler(BaseHTTPRequestHandler):
             system_blocks = system_blocks + [{"type": "text", "text": tutor.WRAP_UP}]
         messages = call["transcript"] + [{"role": "user", "content": text}]
 
+        before_ai = time.monotonic()
         reply = self._call_model(system_blocks, messages,
                                  student_id=student_id, call_id=call["call_id"],
                                  kind="turn")
+        after_ai = time.monotonic()
         messages.append({"role": "assistant", "content": reply})
 
         turns = call["turns"] + 1
         store.save_turn(call["call_id"], messages, turns)
+        log_timing("turn", database=(before_ai - turn_started) + (time.monotonic() - after_ai),
+                   ai=self.last_ai_seconds, total=time.monotonic() - turn_started,
+                   retried=self.last_retried)
 
         payload = {
             "reply": reply,

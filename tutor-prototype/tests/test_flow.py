@@ -110,3 +110,56 @@ class PageTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoThinkingStepTest(ServerTestCase, unittest.TestCase):
+    """The "Juno is thinking..." pause: the conversation answers directly."""
+
+    def setUp(self) -> None:
+        self.opener = self.new_browser()
+        web.ACCESS_PASSPHRASE = ""
+        web.SESSIONS.clear()
+        self.auth()
+
+    def talk(self, side_effect=None):
+        import contextlib
+        import io
+        log = io.StringIO()
+        with mock.patch.object(web.client.messages, "create",
+                               side_effect=side_effect or (lambda **kw: fake_reply("Hi!"))) as create, \
+                contextlib.redirect_stderr(log):
+            self.post("/api/start", {"mode": "free"})
+            self.post("/api/message", {"text": "Hello."})
+        return create, log.getvalue()
+
+    def test_conversation_turns_skip_the_thinking_step(self) -> None:
+        create, _ = self.talk()
+        for call in create.call_args_list:
+            self.assertEqual(call.kwargs["thinking"], {"type": "between_tools"})
+
+    def test_it_can_be_switched_back_without_changing_code(self) -> None:
+        with mock.patch.object(tutor, "TURN_THINKING", "on"):
+            create, _ = self.talk()
+        for call in create.call_args_list:
+            self.assertNotIn("thinking", call.kwargs)
+
+    def test_the_full_model_retry_keeps_its_thinking(self) -> None:
+        declined = fake_reply("")
+        declined.stop_reason = "refusal"
+        create, _ = self.talk(side_effect=[fake_reply("Hi!"), declined, fake_reply("Go on.")])
+        self.assertEqual(create.call_args_list[-1].kwargs["model"], tutor.MODEL)
+        self.assertNotIn("thinking", create.call_args_list[-1].kwargs)
+
+    def test_each_answer_logs_where_the_seconds_went_and_nothing_said(self) -> None:
+        _, log = self.talk()
+        line = next(l for l in log.splitlines() if "turn timing:" in l)
+        self.assertRegex(line, r"database \d+\.\d\d s · AI \d+\.\d\d s · total \d+\.\d\d s")
+        self.assertIn("thinking off", line)
+        self.assertNotIn("Hello", log)
+        self.assertIn("opening timing: AI", log)
+
+    def test_each_model_gets_a_setting_it_accepts(self) -> None:
+        with mock.patch.object(tutor, "TURN_THINKING", "off"):
+            self.assertEqual(tutor.turn_thinking("claude-sonnet-5-5"), {"type": "between_tools"})
+            self.assertIsNone(tutor.turn_thinking("claude-opus-5-5"))
+            self.assertEqual(tutor.turn_thinking("claude-opus-5"), {"type": "disabled"})

@@ -33,6 +33,21 @@ MODEL = "claude-opus-5"
 # waiting between turns; the end-of-call report keeps MODEL above, where depth
 # matters more than speed. Override with JUNO_TURN_MODEL.
 TURN_MODEL = os.environ.get("JUNO_TURN_MODEL", "claude-sonnet-5-5")
+# The conversation answers without a separate thinking step, which is most of
+# the "Juno is thinking..." pause. Set JUNO_TURN_THINKING=on to bring it back.
+TURN_THINKING = os.environ.get("JUNO_TURN_THINKING", "off").strip().lower()
+
+
+def turn_thinking(model: str) -> dict | None:
+    """The `thinking` setting that turns thinking off for this model, or None
+    when it should be left as it is (thinking on, or a model that requires it)."""
+    if TURN_THINKING == "on":
+        return None
+    if model.startswith("claude-sonnet-5-5"):
+        return {"type": "between_tools"}      # Sonnet 5.5's way of "no thinking"
+    if model.startswith(("claude-opus-5-5", "claude-fable", "claude-mythos")):
+        return None                            # these cannot switch it off
+    return {"type": "disabled"}
 BASE_DIR = Path(__file__).resolve().parent
 SCENARIOS_PATH = BASE_DIR / "scenarios.json"
 # Everything a student builds up over time lives here. Point it at a
