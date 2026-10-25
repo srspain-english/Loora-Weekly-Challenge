@@ -248,6 +248,11 @@ From a student's feedback after a week of use:
 - **No separate thinking step in the conversation** (the "Juno is thinking…"
   pause): turns ask the model to answer directly. `JUNO_TURN_THINKING=on`
   brings thinking back without a code change. The report keeps it.
+- **A smarter wait** on "Normal": a sentence that sounds finished is sent 1.5 s
+  after the last word; one that stops on "and", "because", "I think that"…
+  still gets the full 4 s. "8 seconds" and "Until I tap" are unchanged.
+- **The Anthropic library is held to 2.x** (`requirements.txt`), so a new
+  major version is never installed by surprise on deploy.
 - **Timing in the server log**, one line per answer, e.g.
   `[juno] turn timing: database 0.21 s · AI 1.84 s · total 2.10 s (model
   claude-sonnet-5-5, thinking off)`. Times and model only, never text.

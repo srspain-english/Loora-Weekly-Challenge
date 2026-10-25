@@ -1,2 +1,2 @@
-anthropic
+anthropic>=2.3,<3
 psycopg[binary]>=3.2

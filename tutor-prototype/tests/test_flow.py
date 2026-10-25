@@ -163,3 +163,29 @@ class NoThinkingStepTest(ServerTestCase, unittest.TestCase):
             self.assertEqual(tutor.turn_thinking("claude-sonnet-5-5"), {"type": "between_tools"})
             self.assertIsNone(tutor.turn_thinking("claude-opus-5-5"))
             self.assertEqual(tutor.turn_thinking("claude-opus-5"), {"type": "disabled"})
+
+
+class SmarterWaitTest(unittest.TestCase):
+    """About 4 of the 7 seconds a student measured were Juno waiting on purpose."""
+
+    def test_a_finished_sentence_goes_sooner_on_normal(self) -> None:
+        html = web.INDEX_HTML
+        self.assertIn("const QUICK_MS = 1500;", html)
+        self.assertIn("if (setting === 'normal' && lastFinal && soundsFinished(heard)) return QUICK_MS;", html)
+        self.assertIn("lastFinal = !!(latest && latest.isFinal);", html)
+
+    def test_a_sentence_left_hanging_still_gets_the_full_wait(self) -> None:
+        html = web.INDEX_HTML
+        for word in ("'and'", "'because'", "'that'", "'think'", "'um'"):
+            self.assertIn(word, html.split("const UNFINISHED")[1].split(");")[0])
+
+    def test_students_who_need_time_keep_their_choices(self) -> None:
+        html = web.INDEX_HTML
+        self.assertIn('<option value="normal">Normal</option>', html)
+        self.assertIn("long: 8000, tap: Infinity", html)
+
+
+class LibraryVersionTest(unittest.TestCase):
+    def test_the_anthropic_library_is_held_to_one_major_version(self) -> None:
+        reqs = (Path(web.__file__).parent / "requirements.txt").read_text()
+        self.assertIn("anthropic>=2.3,<3", reqs)

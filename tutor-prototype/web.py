@@ -632,7 +632,7 @@ INDEX_HTML = """<!doctype html>
         <select id="voice-speed"><option value="slow">Slow</option><option value="normal" selected>Normal</option><option value="fast">Fast</option></select>
       </label>
       <label title="How long Juno waits when you pause">Wait
-        <select id="patience"><option value="normal">4 seconds</option><option value="long">8 seconds</option><option value="tap">Until I tap</option></select>
+        <select id="patience"><option value="normal">Normal</option><option value="long">8 seconds</option><option value="tap">Until I tap</option></select>
       </label>
     </div>
     <div class="call-foot">
@@ -1124,7 +1124,28 @@ function setupVoiceInput() {
   // How long Juno waits after the last word before deciding the student has
   // finished. "Until I tap" never decides for them.
   const PATIENCE = { normal: SILENCE_MS, long: 8000, tap: Infinity };
-  const patienceMs = () => PATIENCE[$('patience').value] || SILENCE_MS;
+  // On "Normal", a sentence that sounds finished goes after a short pause;
+  // one that stops on "and", "because", "I think that"... still gets the
+  // full wait, so a student looking for the next word is not cut off.
+  const QUICK_MS = 1500;
+  const UNFINISHED = new Set(['and', 'but', 'because', 'so', 'or', 'that', 'the', 'a', 'an',
+    'to', 'of', 'with', 'for', 'in', 'on', 'at', 'my', 'your', 'his', 'her', 'our', 'their',
+    'i', 'is', 'are', 'was', 'were', 'be', 'when', 'if', 'then', 'think', 'maybe', 'um', 'uh',
+    'er', 'erm', 'hmm', 'like', 'which', 'who', 'very', 'really', 'just', 'about', 'from',
+    'into', 'than', 'as', 'also', 'going', 'want', 'have', 'has', 'had', 'we', 'they', 'it',
+    'he', 'she', 'you', 'this', 'there', 'some', 'more', 'not', 'don’t', "don't", 'can', 'will', 'would']);
+  let lastFinal = false;
+  const soundsFinished = (text) => {
+    const words = text.trim().toLowerCase().split(' ').filter(Boolean);
+    if (!words.length) return false;
+    const last = words[words.length - 1].replace(/[.,!?;:]+$/, '');
+    return !UNFINISHED.has(last);
+  };
+  const patienceMs = () => {
+    const setting = $('patience').value;
+    if (setting === 'normal' && lastFinal && soundsFinished(heard)) return QUICK_MS;
+    return PATIENCE[setting] || SILENCE_MS;
+  };
   let carried = '';      // words from earlier pieces of the same answer
   let lastWordAt = 0;
   let stopping = false;  // we asked it to stop: do not stitch another piece on
@@ -1281,6 +1302,8 @@ function setupVoiceInput() {
     let text = '';
     for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
     heard = carried ? carried + ' ' + text : text;
+    const latest = e.results[e.results.length - 1];
+    lastFinal = !!(latest && latest.isFinal);
     $('heard').textContent = heard;
     if (text.trim()) { lastWordAt = Date.now(); setOrb('listening', 'Listening… tap when you’re done'); }
     clearTimeout(silenceTimer);
