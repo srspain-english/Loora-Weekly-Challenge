@@ -380,7 +380,7 @@ INDEX_HTML = """<!doctype html>
   .tabs button.on{color:var(--accent)}
   .tabs svg{width:22px;height:22px}
   body.has-tabs .topbar{margin-bottom:20px}
-  #scenario-row label{margin-top:16px}
+  #scenario-row label, #length-row label{margin-top:16px}
   .hello-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:22px}
   .hello{font-family:'Instrument Serif',Georgia,serif;font-weight:400;font-size:36px;line-height:1.05;color:var(--ink);margin:0}
   .hello i{color:var(--accent)}
@@ -555,12 +555,14 @@ INDEX_HTML = """<!doctype html>
         <option value="C1">C1 · Avanzado</option>
       </select>
 
-      <label for="length">Length</label>
-      <select id="length">
-        <option value="6" selected>6 minutes</option>
-        <option value="10">10 minutes</option>
-        <option value="0">No limit</option>
-      </select>
+      <div id="length-row">
+        <label for="length">Length</label>
+        <select id="length">
+          <option value="6" selected>6 minutes</option>
+          <option value="10">10 minutes</option>
+          <option value="0">No limit</option>
+        </select>
+      </div>
 
       <div id="scenario-row" style="display:none">
         <label for="scenario">Scenario <span class="hint">(optional — random if left as "Surprise me")</span></label>
@@ -883,7 +885,7 @@ function drawClock() {
 function startClass(mode) {
   $('call-label').textContent = 'Juno · ' + (MODE_NAMES[mode] || MODE_NAMES.free);
   typingChosen = !voiceAvailable;
-  classLimitMs = (Number($('length').value) || 0) * 60000;
+  classLimitMs = mode === 'structured' ? 0 : (Number($('length').value) || 0) * 60000;
   wrapUpSent = false;
   timeUpShown = false;
   endAfterSpeaking = false;
@@ -1603,6 +1605,8 @@ $('auth-btn').onclick = async () => {
 
 $('mode').onchange = () => {
   $('scenario-row').style.display = $('mode').value === 'business' ? 'block' : 'none';
+  // A Structured class follows its six parts to the end: it has no time limit.
+  $('length-row').hidden = $('mode').value === 'structured';
 };
 
 $('start-btn').onclick = async () => {
@@ -2875,7 +2879,8 @@ class Handler(BaseHTTPRequestHandler):
 
         student_id = call["student_id"]
         system_blocks = json.loads(call["system"])
-        wrap_up = bool(data.get("wrap_up"))
+        # A Structured class runs its six parts to the end: never cut short.
+        wrap_up = bool(data.get("wrap_up")) and call["mode"] != "structured"
         if wrap_up:
             # For this turn only; the saved prompt is unchanged.
             system_blocks = system_blocks + [{"type": "text", "text": tutor.WRAP_UP}]

@@ -189,3 +189,32 @@ class LibraryVersionTest(unittest.TestCase):
     def test_the_anthropic_library_is_held_to_one_major_version(self) -> None:
         reqs = (Path(web.__file__).parent / "requirements.txt").read_text()
         self.assertIn("anthropic>=2.3,<3", reqs)
+
+
+class StructuredHasNoLimitTest(ServerTestCase, unittest.TestCase):
+    """The teacher's decision: Structured class runs to the end; Free talk and
+    Business English keep the 6-minute limit."""
+
+    def setUp(self) -> None:
+        self.opener = self.new_browser()
+        web.ACCESS_PASSPHRASE = ""
+        web.SESSIONS.clear()
+        self.auth()
+
+    def test_the_page_never_times_a_structured_class(self) -> None:
+        html = web.INDEX_HTML
+        self.assertIn("classLimitMs = mode === 'structured' ? 0 :", html)
+        self.assertIn("$('length-row').hidden = $('mode').value === 'structured';", html)
+
+    def test_the_server_ignores_a_wrap_up_in_a_structured_class(self) -> None:
+        with mock.patch.object(web.client.messages, "create", return_value=fake_reply("Next part.")) as create:
+            self.post("/api/start", {"mode": "structured"})
+            _, data = self.post("/api/message", {"text": "Done.", "wrap_up": True})
+        self.assertFalse(data["wrapped"])
+        self.assertNotIn("TIME IS UP", json.dumps(create.call_args_list[-1].kwargs["system"]))
+
+    def test_free_and_business_still_close_on_time(self) -> None:
+        with mock.patch.object(web.client.messages, "create", return_value=fake_reply("Bye!")):
+            self.post("/api/start", {"mode": "business"})
+            _, data = self.post("/api/message", {"text": "Done.", "wrap_up": True})
+        self.assertTrue(data["wrapped"])

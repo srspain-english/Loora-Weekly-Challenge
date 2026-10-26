@@ -256,7 +256,9 @@ From a student's feedback after a week of use:
 - **Timing in the server log**, one line per answer, e.g.
   `[juno] turn timing: database 0.21 s · AI 1.84 s · total 2.10 s (model
   claude-sonnet-5-5, thinking off)`. Times and model only, never text.
-- **A length on the Practice screen** (6 minutes by default, 10, or no limit).
+- **A length on the Practice screen** for Free talk and Business English (6
+  minutes by default, 10, or no limit). Structured class has no limit: it runs
+  its six parts to the end.
   The clock counts down; the first answer after time is up gets a short
   goodbye from Juno, and the notes open by themselves.
 
