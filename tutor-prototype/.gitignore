@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.env
+data/students/private/
+data/feedback.jsonl
+
+# Server-side state: student identities, saved transcripts, usage and spend.
+# Never belongs in the repository.
+data/juno.db
+data/juno.db-wal
+data/juno.db-shm
+
+# Migrated student memory records (real people, unlike the synthetic alex.json).
+data/students/stu_*.json
