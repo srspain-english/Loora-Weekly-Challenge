@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S&R Spain · Loora Weekly Challenge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { min-height: 100%; background: #E6EBF2; }
+  body { font-family: 'Instrument Sans', system-ui, sans-serif; color: #0E1A2B; padding: 40px 20px; }
+  .wrap { max-width: 660px; margin: 0 auto; background: #FFFFFF; border-radius: 26px; overflow: hidden; box-shadow: 0 30px 60px -30px rgba(0,31,63,.45); border: 1px solid #DCE4EF; }
+
+  .header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 30px; border-bottom: 1px solid #E3E9F2; }
+  .brand { display: flex; align-items: baseline; gap: 8px; }
+  .brand-sr { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 20px; color: #001F3F; }
+  .brand-sub { font-weight: 500; font-size: 20px; color: #7B8BA3; }
+  .toggle { display: inline-flex; padding: 3px; background: #EBF0F7; border-radius: 999px; gap: 2px; }
+  .toggle button { border: none; cursor: pointer; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; letter-spacing: .04em; padding: 6px 14px; border-radius: 999px; transition: all .15s ease; }
+  .btn-active { background: #001F3F !important; color: #FFFFFF !important; }
+  .btn-idle { background: transparent !important; color: #7B8BA3 !important; }
+
+  .hero { background: linear-gradient(135deg, #001F3F 0%, #00305F 100%); color: #F2F6FB; padding: 44px 30px 40px; position: relative; overflow: hidden; }
+  .hero-deco { position: absolute; top: -18px; right: -6px; font-size: 140px; line-height: 1; color: rgba(102,170,255,.14); pointer-events: none; user-select: none; }
+  .hero-eyebrow { text-transform: uppercase; letter-spacing: .18em; font-size: 12px; font-weight: 600; color: #6FB1FF; position: relative; }
+  .hero h1 { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 42px; line-height: 1.05; letter-spacing: -.02em; margin: 14px 0 16px; max-width: 16ch; position: relative; }
+  .hero-body { font-size: 16px; line-height: 1.65; color: #C5D3E6; max-width: 52ch; position: relative; }
+  .hero-body strong { color: #FFFFFF; }
+
+  .banner { background: #E8F1FC; border-bottom: 1px solid #C9DCF3; padding: 16px 30px; display: flex; gap: 12px; align-items: flex-start; }
+  .banner-icon { font-size: 20px; flex-shrink: 0; line-height: 1.4; }
+  .banner-text { font-size: 14.5px; line-height: 1.6; color: #123E6B; }
+  .banner-text strong { color: #0A2A4A; }
+
+  .reminders { padding: 24px 30px; border-bottom: 1px solid #E3E9F2; }
+  .section-label { text-transform: uppercase; letter-spacing: .14em; font-size: 11px; font-weight: 700; color: #0066CC; margin-bottom: 14px; }
+  .tip { display: flex; align-items: flex-start; gap: 10px; font-size: 15px; line-height: 1.5; color: #2B3A4F; margin-bottom: 10px; }
+  .tip:last-child { margin-bottom: 0; }
+  .dot { color: #0066CC; font-size: 12px; line-height: 1.6; flex-shrink: 0; }
+
+  .level-beginner { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #E8F5E9; color: #2E7D32; border: 1px solid #C8E6C9; }
+  .level-intermediate { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #FFF3E0; color: #E65100; border: 1px solid #FFE0B2; }
+  .level-advanced { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #FCE4EC; color: #C62828; border: 1px solid #F8BBD0; }
+
+  .section-block { padding: 28px 30px 8px; }
+  .section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding: 14px 18px; border-radius: 14px; }
+  .sh-phrases { background: #EAF2FC; color: #0E1A2B; border: 1px solid #CFE0F4; }
+  .sh-meeting { background: #001F3F; color: #F2F6FB; }
+  .section-icon { font-size: 26px; line-height: 1; }
+  .section-title-block { display: flex; flex-direction: column; gap: 3px; }
+  .section-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px; line-height: 1.2; }
+  .section-subtitle { font-size: 13px; opacity: .7; }
+
+  .card { border: 1px solid #DCE4EF; border-radius: 18px; padding: 20px 20px 18px; background: #fff; margin-bottom: 16px; }
+  .card-top { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+  .card-num { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 34px; border-radius: 9px; background: #001F3F; color: #FFFFFF; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+  .card-num-blue { background: #0066CC; }
+  .card-emoji { font-size: 22px; line-height: 1.5; flex-shrink: 0; }
+  .card-right { display: flex; flex-direction: column; gap: 6px; padding-top: 3px; }
+  .card-title { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 17px; line-height: 1.3; color: #0E1A2B; }
+
+  .compare { background: #F6F9FD; border: 1px solid #E1E9F4; border-radius: 12px; padding: 14px 16px; margin-bottom: 4px; }
+  .cmp-row { display: flex; gap: 10px; align-items: flex-start; font-size: 14.5px; line-height: 1.5; margin-bottom: 8px; }
+  .cmp-mark { font-weight: 700; flex-shrink: 0; width: 18px; }
+  .cmp-no .cmp-mark { color: #B0392A; }
+  .cmp-no .cmp-text { color: #7B8BA3; text-decoration: line-through; text-decoration-color: rgba(176,57,42,.45); }
+  .cmp-yes .cmp-mark { color: #2E7D32; }
+  .cmp-yes .cmp-text { color: #0E1A2B; font-weight: 600; }
+  .cmp-also { font-size: 13px; color: #5C6E87; margin: 2px 0 8px 28px; }
+  .cmp-why { font-size: 13.5px; color: #3E506A; line-height: 1.55; border-top: 1px solid #E1E9F4; padding-top: 10px; margin-top: 4px; }
+
+  .script-box { background: #EEF5FD; border: 1px solid #D3E3F6; border-left: 3px solid #0066CC; border-radius: 11px; padding: 13px 15px; margin-top: 12px; }
+  .script-label { text-transform: uppercase; letter-spacing: .12em; font-size: 10px; font-weight: 700; color: #0052A3; margin-bottom: 8px; }
+  .script-text { font-size: 14.5px; line-height: 1.6; color: #1B2A40; font-style: italic; }
+  .sb-dark { background: #001F3F; border: 1px solid #0A3A66; border-left: 3px solid #4DA3FF; }
+  .sl-dark { color: #7FBAFF; }
+  .st-dark { color: #DCE8F6; }
+
+  .divider { height: 1px; background: #E3E9F2; margin: 8px 30px 0; }
+
+  .closing-banner { margin: 22px 30px 28px; background: linear-gradient(135deg, #0066CC 0%, #003F80 100%); color: #F2F8FF; border-radius: 18px; padding: 26px 22px; text-align: center; }
+  .closing-icon { font-size: 28px; line-height: 1; margin-bottom: 10px; }
+  .closing-msg { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 18px; line-height: 1.4; max-width: 34ch; margin: 0 auto; }
+
+  .footer { padding: 18px 30px 24px; border-top: 1px solid #E3E9F2; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .footer-note { font-size: 13px; color: #7B8BA3; }
+  .footer-brand { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; color: #001F3F; }
+
+  @media (max-width: 500px) {
+    body { padding: 16px 10px; }
+    .hero h1 { font-size: 30px; }
+    .header, .reminders, .section-block, .footer, .banner { padding-left: 18px; padding-right: 18px; }
+    .closing-banner { margin-left: 18px; margin-right: 18px; }
+    .divider { margin-left: 18px; margin-right: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <div class="brand"><span class="brand-sr">S&amp;R</span><span class="brand-sub">Spain</span></div>
+    <div class="toggle">
+      <button id="btn-en" class="btn-active" onclick="setLang('en')">EN</button>
+      <button id="btn-es" class="btn-idle" onclick="setLang('es')">ES</button>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="hero-deco">🎯</div>
+    <div class="hero-eyebrow" id="eyebrow">Loora · Weekly Challenge</div>
+    <h1 id="hero-title">Say It Like You Mean It.</h1>
+    <p class="hero-body" id="hero-body"></p>
+  </div>
+
+  <div class="banner">
+    <div class="banner-icon">🇪🇸</div>
+    <div class="banner-text" id="banner-text"></div>
+  </div>
+
+  <div class="reminders">
+    <div class="section-label" id="rem-label">Remember</div>
+    <div id="rem-list"></div>
+  </div>
+
+  <!-- SECTION 1: PHRASES -->
+  <div class="section-block">
+    <div class="section-header sh-phrases">
+      <span class="section-icon">💬</span>
+      <div class="section-title-block">
+        <span class="section-title" id="s1-title"></span>
+        <span class="section-subtitle" id="s1-sub"></span>
+      </div>
+    </div>
+    <div id="phrase-list"></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- SECTION 2: FULL MEETING -->
+  <div class="section-block" style="padding-top: 28px;">
+    <div class="section-header sh-meeting">
+      <span class="section-icon">🎙️</span>
+      <div class="section-title-block">
+        <span class="section-title" id="s2-title"></span>
+        <span class="section-subtitle" id="s2-sub"></span>
+      </div>
+    </div>
+    <div id="meeting-list"></div>
+  </div>
+
+  <div class="closing-banner">
+    <div class="closing-icon">🎯</div>
+    <div class="closing-msg" id="closing"></div>
+  </div>
+
+  <div class="footer">
+    <span class="footer-note" id="footer-note"></span>
+    <span class="footer-brand">srspain.es</span>
+  </div>
+
+</div>
+
+<script>
+/* Loora prompts: basics in Spanish (as requested), the rest in English. Same in both language views. */
+const SCRIPTS = [
+  "Quiero practicar la frase QUICK QUESTION FOR YOU. Actúa como mi compañero en una reunión y habla en inglés sencillo. Yo te haré preguntas empezando con esa frase. Si no entiendo algo, explícamelo en español. Corrígeme con amabilidad.",
+  "Quiero practicar la frase DOES THAT MAKE SENSE. Actúa como mi compañero y habla en inglés sencillo y despacio. Yo te explicaré un proceso de mi trabajo y terminaré cada explicación con esa pregunta. Si no entiendo algo, explícamelo en español.",
+  "I want to practice saying LET ME THINK ABOUT THAT FOR A SECOND. Act as my manager in a meeting and ask me difficult questions. I will take a moment with that phrase before each answer. If I say \"Wait, I need to think\", correct me and give me the better version.",
+  "I want to practice saying ONE OPTION WOULD BE TO. Act as my colleague with a problem at work. I will suggest solutions starting with that phrase. If I say \"Maybe we can\", correct me and give me the better version.",
+  "I want to practice saying I SEE IT SLIGHTLY DIFFERENTLY. Act as a manager who proposes a plan I do not fully like. I will disagree politely with that phrase. If I say \"I don't agree\", correct me. Push me to keep the conversation open.",
+  "I want to practice saying I'LL TAKE A LOOK AND GET BACK TO YOU. Act as a busy manager who gives me requests. I will promise next steps with that phrase and a time. If I say \"I will check it\", correct me. Give me feedback at the end."
+];
+
+const MEETING_SCRIPT = "Act as my manager in a fast team meeting. I will practise these phrases: quick question for you, let me think about that for a second, one option would be to, I see it slightly differently, does that make sense, and I'll take a look and get back to you. Interrupt me, disagree with me and give me tasks. Correct me when I use a weaker version. Give me a score out of ten at the end.";
+
+const DATA = {
+  en: {
+    eyebrow: "Loora · Weekly Challenge",
+    title: "Say It Like You Mean It.",
+    body: "<strong>Hi everyone!</strong> Your English is already correct. This week we make it sound more confident — six phrases for meetings, and one full meeting to put them all together. Pick your level and speak.",
+    bannerText: "<strong>Beginner challenges are in Spanish</strong>, so you can start without stress. Loora will speak simple English and explain in Spanish if you get stuck.",
+    remLabel: "Remember",
+    reminders: [
+      "Tell Loora exactly what's written below — out loud!",
+      "Say the ✓ phrase out loud. You learn these with your mouth, not your eyes.",
+      "Pick two phrases and use them in your next real meeting. 😎"
+    ],
+    s1Title: "Six Phrases for Meetings", s1Sub: "Same English. More confidence.",
+    s2Title: "The Full Meeting", s2Sub: "All six phrases, one conversation",
+    instead: "Instead of", say: "Say", also: "Also:",
+    sayBasic: "Tell Loora (in Spanish)", sayNormal: "Tell Loora",
+    closing: "Better English isn't more English. It's using the English you already have.",
+    footerNote: "S&R Spain · Loora Weekly Challenge",
+    phrases: [
+      { emoji: "🙋", level: "beginner", title: "Ask Without Asking Permission",
+        no: "I want to ask you something.", yes: "Quick question for you—", also: "Can I jump in with a quick question?",
+        why: "Announcing that you want to speak wastes time and sounds like asking permission. \"Quick question\" already is the question." },
+      { emoji: "🧠", level: "beginner", title: "Check They're Following You",
+        no: "Do you understand?", yes: "Does that make sense?", also: "Is that clear so far?",
+        why: "The first tests the other person. The second tests your own explanation." },
+      { emoji: "⏸️", level: "intermediate", title: "Buy Time Without Losing Authority",
+        no: "Wait, I need to think.", yes: "Let me think about that for a second.", also: "Give me a second to think that through.",
+        why: "\"Wait\" sounds rushed. \"Let me...\" turns the pause into your decision." },
+      { emoji: "🛠️", level: "intermediate", title: "Put an Option on the Table",
+        no: "Maybe we can...", yes: "One option would be to...", also: "What if we...",
+        why: "\"Maybe\" leaves the proposal hanging. \"One option\" puts it on the table so people can decide." },
+      { emoji: "🤝", level: "advanced", title: "Disagree Diplomatically",
+        no: "I don't agree.", yes: "I see it slightly differently.", also: "I'd look at it from a different angle.",
+        why: "You keep your position without closing the conversation: you disagree with the idea, not the person." },
+      { emoji: "📬", level: "advanced", title: "Close With a Next Step",
+        no: "I will check it.", yes: "I'll take a look and get back to you.", also: "Let me look into it and I'll come back to you.",
+        why: "You add the next step. Without \"get back to you\", the other person doesn't know when to expect an answer." }
+    ],
+    meeting: [
+      { emoji: "🎙️", level: "advanced", title: "Run the Whole Meeting" }
+    ]
+  },
+  es: {
+    eyebrow: "Loora · Reto Semanal",
+    title: "Dilo con seguridad.",
+    body: "<strong>¡Hola a todos!</strong> Vuestro inglés ya es correcto. Esta semana lo hacemos sonar más seguro: seis frases para reuniones y una reunión completa para juntarlas todas. Elegid vuestro nivel y a hablar.",
+    bannerText: "<strong>Los retos de nivel básico están en español</strong>, para empezar sin estrés. Loora hablará en inglés sencillo y os explicará en español si os atascáis.",
+    remLabel: "Recordad",
+    reminders: [
+      "¡Decidle a Loora exactamente lo que pone abajo — en voz alta!",
+      "Decid en voz alta la frase ✓. Estas frases se aprenden con la boca, no con los ojos.",
+      "Elegid dos frases y usadlas en vuestra próxima reunión real. 😎"
+    ],
+    s1Title: "Seis frases para reuniones", s1Sub: "El mismo inglés. Más seguridad.",
+    s2Title: "La reunión completa", s2Sub: "Las seis frases en una sola conversación",
+    instead: "En lugar de", say: "Di", also: "También:",
+    sayBasic: "Dile a Loora (en español)", sayNormal: "Dile a Loora 🇬🇧",
+    closing: "Mejorar no es aprender más inglés. Es usar mejor el que ya tienes.",
+    footerNote: "S&R Spain · Reto Semanal de Loora",
+    phrases: [
+      { emoji: "🙋", level: "beginner", title: "Pide la palabra sin pedir permiso",
+        no: "I want to ask you something.", yes: "Quick question for you—", also: "Can I jump in with a quick question?",
+        why: "Anunciar que quieres hablar gasta tiempo y suena a permiso. \"Quick question\" ya es la pregunta." },
+      { emoji: "🧠", level: "beginner", title: "Comprueba que te siguen",
+        no: "Do you understand?", yes: "Does that make sense?", also: "Is that clear so far?",
+        why: "La primera pone a prueba al otro. La segunda pone a prueba tu explicación." },
+      { emoji: "⏸️", level: "intermediate", title: "Gana tiempo sin perder autoridad",
+        no: "Wait, I need to think.", yes: "Let me think about that for a second.", also: "Give me a second to think that through.",
+        why: "\"Wait\" suena a apuro. \"Let me...\" convierte la pausa en una decisión tuya." },
+      { emoji: "🛠️", level: "intermediate", title: "Pon una opción sobre la mesa",
+        no: "Maybe we can...", yes: "One option would be to...", also: "What if we...",
+        why: "\"Maybe\" deja la propuesta en el aire. \"One option\" la pone sobre la mesa para decidir." },
+      { emoji: "🤝", level: "advanced", title: "Discrepa con diplomacia",
+        no: "I don't agree.", yes: "I see it slightly differently.", also: "I'd look at it from a different angle.",
+        why: "Mantienes la posición sin cerrar la conversación: discrepas de la idea, no de la persona." },
+      { emoji: "📬", level: "advanced", title: "Cierra con un siguiente paso",
+        no: "I will check it.", yes: "I'll take a look and get back to you.", also: "Let me look into it and I'll come back to you.",
+        why: "Añades el siguiente paso. Sin \"get back to you\", la otra persona no sabe cuándo espera respuesta." }
+    ],
+    meeting: [
+      { emoji: "🎙️", level: "advanced", title: "Dirige la reunión completa" }
+    ]
+  }
+};
+
+const LEVEL_LABELS = {
+  en: { beginner: "Beginner", intermediate: "Intermediate", advanced: "Advanced" },
+  es: { beginner: "Principiante", intermediate: "Intermedio", advanced: "Avanzado" }
+};
+
+function phraseCard(c, i, d, lang) {
+  const basic = c.level === 'beginner';
+  return `
+    <div class="card">
+      <div class="card-top">
+        <span class="card-num card-num-blue">${String(i+1).padStart(2,'0')}</span>
+        <span class="card-emoji">${c.emoji}</span>
+        <div class="card-right">
+          <span class="level-${c.level}">${LEVEL_LABELS[lang][c.level]}</span>
+          <span class="card-title">${c.title}</span>
+        </div>
+      </div>
+      <div class="compare">
+        <div class="cmp-row cmp-no"><span class="cmp-mark">✕</span><span class="cmp-text">${c.no}</span></div>
+        <div class="cmp-row cmp-yes"><span class="cmp-mark">✓</span><span class="cmp-text">${c.yes}</span></div>
+        <div class="cmp-also">${d.also} ${c.also}</div>
+        <div class="cmp-why">${c.why}</div>
+      </div>
+      <div class="script-box">
+        <div class="script-label">${basic ? d.sayBasic : d.sayNormal}</div>
+        <div class="script-text">"${SCRIPTS[i]}"</div>
+      </div>
+    </div>`;
+}
+
+function render(lang) {
+  const d = DATA[lang];
+  document.getElementById('eyebrow').textContent = d.eyebrow;
+  document.getElementById('hero-title').textContent = d.title;
+  document.getElementById('hero-body').innerHTML = d.body;
+  document.getElementById('banner-text').innerHTML = d.bannerText;
+  document.getElementById('rem-label').textContent = d.remLabel;
+  document.getElementById('s1-title').textContent = d.s1Title;
+  document.getElementById('s1-sub').textContent = d.s1Sub;
+  document.getElementById('s2-title').textContent = d.s2Title;
+  document.getElementById('s2-sub').textContent = d.s2Sub;
+  document.getElementById('closing').textContent = d.closing;
+  document.getElementById('footer-note').textContent = d.footerNote;
+
+  document.getElementById('rem-list').innerHTML = d.reminders.map(r =>
+    `<div class="tip"><span class="dot">◆</span><span>${r}</span></div>`
+  ).join('');
+
+  document.getElementById('phrase-list').innerHTML = d.phrases.map((c, i) => phraseCard(c, i, d, lang)).join('');
+
+  document.getElementById('meeting-list').innerHTML = d.meeting.map((c, i) => `
+    <div class="card">
+      <div class="card-top">
+        <span class="card-num">${String(i+1).padStart(2,'0')}</span>
+        <span class="card-emoji">${c.emoji}</span>
+        <div class="card-right">
+          <span class="level-${c.level}">${LEVEL_LABELS[lang][c.level]}</span>
+          <span class="card-title">${c.title}</span>
+        </div>
+      </div>
+      <div class="script-box sb-dark">
+        <div class="script-label sl-dark">${d.sayNormal}</div>
+        <div class="script-text st-dark">"${MEETING_SCRIPT}"</div>
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('btn-en').className = lang === 'en' ? 'btn-active' : 'btn-idle';
+  document.getElementById('btn-es').className = lang === 'es' ? 'btn-active' : 'btn-idle';
+}
+
+function setLang(lang) { render(lang); }
+render('en');
+</script>
+</body>
+</html>
