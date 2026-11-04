@@ -182,6 +182,36 @@ class PageTest(ServerTestCase, unittest.TestCase):
             result = subprocess.run(["node", "--check", str(path)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_turn_taking_has_a_distinct_icon_for_each_speaker(self) -> None:
+        # A student who struggles with the English labels ("no entiendo cuando
+        # tengo que hablar yo, y cuando habla la maquina") still needs to tell
+        # whose turn it is at a glance: a mic icon means the student talks, a
+        # speaker icon means Juno is talking, dots mean Juno is thinking.
+        self.assertIn('id="ico-mic"', self.html)
+        self.assertIn('id="ico-speaker"', self.html)
+        self.assertIn('id="ico-thinking"', self.html)
+        # <svg> is an SVGElement, not an HTMLElement: assigning .hidden on it
+        # silently sets a disconnected JS property that touches neither the
+        # DOM attribute nor the [hidden]{display:none} CSS rule, so the icon
+        # never actually changes. Guard against that regressing.
+        self.assertIn("toggleAttribute('hidden'", self.html)
+        self.assertNotIn("$('ico-mic').hidden", self.html)
+        self.assertNotIn("$('ico-speaker').hidden", self.html)
+        self.assertNotIn("$('ico-thinking').hidden", self.html)
+
+    def test_turn_taking_labels_are_bilingual(self) -> None:
+        # English alone was not enough for a student who does not read it
+        # fluently; every orb label gets a short Spanish line underneath.
+        self.assertIn("const ORB_ES = {", self.html)
+        for english, spanish in (
+            ("Your turn — tap to talk", "toca para hablar"),
+            ("Listening… just speak", "te escucho, habla ya"),
+            ("Juno is speaking", "habla Juno, espera"),
+            ("Juno is thinking…", "un momento…"),
+        ):
+            self.assertIn(f"'{english}': '{spanish}'", self.html)
+        self.assertIn('orb-state-es', self.html)
+
     def test_students_who_pause_a_lot_can_make_juno_wait(self) -> None:
         # Reported: "I do many pauses and Juno won't let me finish." Safari and
         # iPhone end listening at the first pause, so the pieces are stitched

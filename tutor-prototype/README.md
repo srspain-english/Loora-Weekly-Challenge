@@ -273,6 +273,19 @@ each with a button to hear it said slowly before the student says it
 themselves. The access code ignores capitals and spaces, and the level list
 names each level in Spanish.
 
+### Whose turn is it
+
+A student reported not understanding when to speak and when Juno is speaking
+("no entiendo cuando tengo que hablar yo, y cuando habla la maquina"). The orb
+now shows a different icon for each state instead of relying on the English
+label alone: a microphone when it is the student's turn, a speaker while Juno
+talks, and three dots while Juno is thinking. Every label also gets a short
+Spanish line underneath (`ORB_ES` in the page script). Implementation note:
+the icons are `<svg>` elements, and unlike `HTMLElement`, `SVGElement` does
+not reflect the `.hidden` property to the real attribute - setting it there
+silently does nothing, so the icons are toggled with `toggleAttribute`
+instead.
+
 ### Pauses, speed and easier English
 
 Three things a student can change for themselves, remembered on their device:

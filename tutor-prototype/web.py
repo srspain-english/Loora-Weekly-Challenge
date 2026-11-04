@@ -267,6 +267,11 @@ INDEX_HTML = """<!doctype html>
   }
   #mic-btn::before{content:"";position:absolute;inset:-20px;border-radius:50%;border:1px solid rgba(155,124,255,.38);pointer-events:none}
   #mic-btn svg{width:26%;height:26%}
+  #ico-thinking circle{animation:thinkingDot 1.2s ease-in-out infinite}
+  #ico-thinking circle:nth-child(2){animation-delay:.15s}
+  #ico-thinking circle:nth-child(3){animation-delay:.3s}
+  @keyframes thinkingDot{0%,80%,100%{opacity:.35}40%{opacity:1}}
+  .orb-state-es{display:block;font-size:12px;letter-spacing:.02em;color:var(--muted);opacity:.8;margin-top:2px}
   #mic-btn:active{transform:scale(.97)}
   #mic-btn:disabled{filter:grayscale(.9) brightness(.55);opacity:1}
   #mic-btn.recording::after{
@@ -599,9 +604,11 @@ INDEX_HTML = """<!doctype html>
       <p class="juno-line" id="juno-line" aria-live="polite"></p>
       <p class="tap-hint" id="tap-hint" hidden>Toca cualquier palabra para ver qué significa</p>
       <button id="mic-btn" aria-label="Tap to talk" title="Tap to talk">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+        <svg id="ico-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+        <svg id="ico-speaker" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 8a5 5 0 0 1 0 8"/><path d="M19.5 5.5a9 9 0 0 1 0 13"/></svg>
+        <svg id="ico-thinking" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
       </button>
-      <div class="orb-state" id="orb-state">Tap to talk</div>
+      <div class="orb-state" id="orb-state">Tap to talk <span class="orb-state-es">(toca para hablar)</span></div>
       <div class="heard" id="heard"></div>
     </div>
 
@@ -855,12 +862,40 @@ function clearChat() {
   $('chat-error').textContent = '';
 }
 
+// Turn-taking must be readable without reading English: the icon itself says
+// whose turn it is. Mic = you; speaker = Juno; dots = Juno is thinking.
+const ORB_ES = {
+  'Your turn — tap to talk': 'toca para hablar',
+  'Your turn — type your answer below': 'escribe tu respuesta',
+  'Listening… just speak': 'te escucho, habla ya',
+  'Starting the microphone…': 'activando el micrófono…',
+  'Listening…': 'te escucho',
+  'Listening… tap when you’re done': 'toca cuando termines',
+  'Juno is speaking': 'habla Juno, espera',
+  'Juno is thinking…': 'un momento…',
+  'Paused': 'en pausa',
+};
 function setOrb(state, label) {
   const b = $('mic-btn');
   b.classList.toggle('recording', state === 'listening');
   b.classList.toggle('speaking', state === 'speaking');
   b.classList.toggle('thinking', state === 'thinking');
-  $('orb-state').textContent = label;
+  // These three are <svg> elements: unlike HTMLElement, SVGElement does not
+  // reflect the .hidden property to the real attribute, so setting it here
+  // silently does nothing visible — toggle the attribute directly instead.
+  const showIcon = (id, show) => $(id).toggleAttribute('hidden', !show);
+  showIcon('ico-mic', state !== 'speaking' && state !== 'thinking');
+  showIcon('ico-speaker', state === 'speaking');
+  showIcon('ico-thinking', state === 'thinking');
+  const es = ORB_ES[label];
+  $('orb-state').textContent = '';
+  $('orb-state').append(label);
+  if (es) {
+    const line = document.createElement('span');
+    line.className = 'orb-state-es';
+    line.textContent = '(' + es + ')';
+    $('orb-state').append(line);
+  }
 }
 function idleOrb() {
   if (paused) { setOrb('idle', 'Paused'); return; }
