@@ -1,4 +1,8 @@
-# Juno — S&R Tutor Playbook, text prototype
+> Development only. No deployment or live API evaluation has been performed.
+> Use fictional students and `python tests/run_offline.py` for testing.
+> The hosting instructions below describe a future, separately approved release.
+
+# Juno 3.0 development — OpenAI migration
 
 A text-only proof of the teaching brain behind Juno, before any voice
 infrastructure gets built. Same rules as the published Tutor Playbook
@@ -15,7 +19,8 @@ of the playbook.
 
 ```bash
 pip install -r requirements.txt
-export ANTHROPIC_API_KEY=sk-ant-...   # or `ant auth login`
+# Offline implementation/testing needs no API key.
+# For a separately approved live run only: set OPENAI_API_KEY server-side.
 ```
 
 ## Run it
@@ -90,7 +95,7 @@ to the terminal and gets written back into that student's memory file.
 4. **Build Command**: `pip install -r requirements.txt`
 5. **Start Command**: `python3 web.py`
 6. Under **Environment**, add these variables:
-   - `ANTHROPIC_API_KEY` — your key
+   - `OPENAI_API_KEY` — server-side, only for an approved live run
    - `JUNO_ACCESS_PASSPHRASE` — a code your students will type before they can use it. **Required** — `web.py` refuses to start deployed without one, since an unprotected public URL means anyone who finds it spends your API credit with no limit.
 7. Deploy. Render gives you a URL like `https://juno-xxxx.onrender.com`.
 
@@ -143,37 +148,43 @@ service's **Disks** page (mount path `/opt/render/project/src/storage`,
 A service with a disk can't run more than one instance, and deploys have a
 few seconds of downtime while the disk moves to the new instance.
 
-## What a call costs
+## OpenAI models, accounting and offline tests
 
-Every student message spends your Anthropic credit. A rough sizing, from
-measured prompt lengths rather than real invoices — a 20-turn call is around
-71k input tokens and 3.8k output, because each turn resends the system
-prompt and the whole transcript so far:
+This development branch uses the official pinned OpenAI Python SDK and Responses API.
+There is no runtime dependency on Anthropic, its login, or a subscription.
+Codex is the development tool, not a service in the student request path.
+The production branch is independent and has not been changed or deployed.
 
-| | Per call | 40 calls |
-|---|---:|---:|
-| Opus 5, uncached | $0.45 | ~$18 |
-| **Opus 5, cached (current)** | **$0.13** | **~$5** |
+- `JUNO_TURN_MODEL=gpt-6-luna`: openings, conversation, Help me, word definitions.
+- `JUNO_REPORT_MODEL=gpt-6.1-terra`: End, cron and abandoned-class reports.
+- `JUNO_TURN_EFFORT=none`, `JUNO_REPORT_EFFORT=low`: explicit reasoning settings.
+- `JUNO_STREAM_REPLIES=off` retains the one-shot response path.
+- `JUNO_DAILY_COST_CEILING_USD=5`: positive UTC-day allowance; zero blocks paid requests.
+- New model names also need an approved price entry in `JUNO_OPENAI_PRICES_JSON`:
+  map each exact model ID to `[input, cached_read, cache_write_30m, output]`,
+  in USD per million tokens. Unknown prices fail closed. Refresh prices before live testing.
 
-Prompt caching (`tutor.cacheable_system`, plus top-level `cache_control` at
-each call site) is what closes that gap: a cache read costs a tenth of a
-fresh read, and the repeated prefix is most of a call's tokens. It changes
-nothing about the teaching — same model, same prompt, same replies.
+Standard-tier reference prices checked 2026-11-16:
+Luna `[0.10, 0.01, 0.125, 0.50]`, Terra `[1.00, 0.05, 1.25, 5.00]`.
+Every AI request reserves a conservative allowance before sending. Completed
+usage settles once; missing/invalid usage leaves a charged allowance in place.
+Output includes reasoning tokens already. No hidden SDK retries or model fallback
+are enabled. Reports, help and definitions use the same budget boundary.
+Requests use Standard tier, 30-minute cache minimum lifetime and `store=False`.
+The provider's abuse-monitoring and cache retention policies still apply.
+No external tools, hosted conversations or automatic transcript compaction are used.
 
-It is also **silent when it breaks**: no error, no behaviour change, just a
-bill several times larger. `tests/test_caching.py` asserts the conditions it
-depends on — the markers are actually sent, the system prompt stays
-byte-identical across turns, the transcript only ever grows, and the prompt
-clears the model's minimum cacheable length.
+```bash
+python -m pip install -r requirements.txt
+python tests/run_offline.py
+```
 
-Two levers deliberately not pulled, both yours to decide:
-
-- **A cheaper model.** `tutor.MODEL` is `claude-opus-5`. Sonnet 5 would cost
-  roughly $0.18 a call uncached, Haiku 4.5 about $0.09 — but unlike caching,
-  that trades away correction quality, which is the whole point of the tool.
-- **A real spend limit.** `MAX_CALLS_PER_SESSION` is per browser cookie, so
-  clearing cookies resets it, and one passphrase is shared by every student.
-  Fine for a pilot with people you know; not a cap.
+The runner clears credentials and live configuration, redirects all data to a
+throwaway directory, and rejects outbound network. API results are mocked;
+SDK protocol tests terminate at an in-memory HTTP transport. No real student
+records or API keys are needed. Optional database tests accept only a local
+`JUNO_TEST_DATABASE_URL` with a `juno_test_` database name. Never use a production URL.
+See [OPENAI_MIGRATION.md](OPENAI_MIGRATION.md) for recovery, rollback and limitations.
 
 ## Juno's voice
 
@@ -241,21 +252,17 @@ From a student's feedback after a week of use:
   tense/person mistakes, at most one per reply; everything else goes to the
   report. Business scenarios' "correct my English throughout" notes no longer
   override it.
-- **The conversation runs on a faster model** (`JUNO_TURN_MODEL`, default
-  `claude-sonnet-5-5`, at low effort); Help me and word lookups too. If it
-  ever declines, the turn is retried once on the full model. The end-of-call
-  report stays on the full model (`MODEL`).
-- **No separate thinking step in the conversation** (the "Juno is thinking…"
-  pause): turns ask the model to answer directly. `JUNO_TURN_THINKING=on`
-  brings thinking back without a code change. The report keeps it.
+- **Conversation uses GPT-6 Luna**, configurable with `JUNO_TURN_MODEL`.
+  Help me and word lookups use the same model; reports use `JUNO_REPORT_MODEL`
+  (GPT-6.1 Terra). Refusals are not retried on a different model.
+- **No separate reasoning step by default in conversation**:
+  `JUNO_TURN_EFFORT=none`; reports use `JUNO_REPORT_EFFORT=low`.
 - **A smarter wait** on "Normal": a sentence that sounds finished is sent 1.5 s
   after the last word; one that stops on "and", "because", "I think that"…
   still gets the full 4 s. "8 seconds" and "Until I tap" are unchanged.
-- **The Anthropic library is held to 2.x** (`requirements.txt`), so a new
-  major version is never installed by surprise on deploy.
-- **Timing in the server log**, one line per answer, e.g.
-  `[juno] turn timing: database 0.21 s · AI 1.84 s · total 2.10 s (model
-  claude-sonnet-5-5, thinking off)`. Times and model only, never text.
+- **The OpenAI library is pinned** in `requirements.txt`.
+- **Timing logs** contain duration, model, pseudonymous IDs, token counts and cost;
+  never lesson text, student names or credentials.
 - **A length on the Practice screen** for Free talk and Business English (6
   minutes by default, 10, or no limit). Structured class has no limit: it runs
   its six parts to the end.
