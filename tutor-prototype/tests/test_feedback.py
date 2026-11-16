@@ -3,8 +3,8 @@
 
 Runs the real ThreadingHTTPServer on a free local port and talks to it
 over HTTP, same as a browser would - no mocking of the server internals.
-Doesn't touch the Anthropic API (the feedback endpoint never calls it),
-so this runs without an ANTHROPIC_API_KEY set.
+Doesn't touch the OpenAI API (the feedback endpoint never calls it),
+so this runs without an OPENAI_API_KEY set.
 """
 
 from __future__ import annotations

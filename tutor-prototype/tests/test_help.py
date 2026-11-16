@@ -34,13 +34,13 @@ class HelpTest(ServerTestCase, unittest.TestCase):
         self.auth()
 
     def _start(self):
-        with mock.patch.object(web.client.messages, "create",
+        with mock.patch.object(web.client.responses, "create",
                                return_value=fake_reply("How was your day?")):
             _, started = self.post("/api/start", {"mode": "free", "level": "A2"})
         return started["call_id"]
 
     def _help(self, response=None):
-        with mock.patch.object(web.client.beta.messages, "create",
+        with mock.patch.object(web.client.responses, "create",
                                return_value=response or fake_help()) as create:
             status, body = self.post("/api/help", {})
         return status, body, create
@@ -62,8 +62,8 @@ class HelpTest(ServerTestCase, unittest.TestCase):
         self.assertEqual(after["transcript"], before["transcript"])
         self.assertEqual(after["turns"], before["turns"])
         sent = create.call_args.kwargs
-        self.assertIn("A2", sent["system"])
-        self.assertIn("How was your day?", sent["messages"][0]["content"])
+        self.assertIn("A2", sent["instructions"])
+        self.assertIn("How was your day?", sent["input"][0]["content"])
 
     def test_a_refusal_gets_a_friendly_answer(self) -> None:
         self._start()

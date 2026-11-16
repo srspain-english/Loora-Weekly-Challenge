@@ -52,26 +52,25 @@ class FasterRepliesTest(ServerTestCase, unittest.TestCase):
         self.auth()
 
     def test_the_conversation_uses_the_fast_model_at_low_effort(self) -> None:
-        with mock.patch.object(web.client.messages, "create", return_value=fake_reply("Hi!")) as create:
+        with mock.patch.object(web.client.responses, "create", return_value=fake_reply("Hi!")) as create:
             self.post("/api/start", {"mode": "free"})
             self.post("/api/message", {"text": "Hello."})
         for call in create.call_args_list:
             self.assertEqual(call.kwargs["model"], tutor.TURN_MODEL)
-            self.assertEqual(call.kwargs["output_config"], {"effort": "low"})
+            self.assertEqual(call.kwargs["reasoning"], {"effort": "none"})
         self.assertNotEqual(tutor.TURN_MODEL, tutor.MODEL)
 
-    def test_if_the_fast_model_declines_the_full_model_answers(self) -> None:
+    def test_a_refusal_is_not_retried_on_another_model(self):
         declined = fake_reply("")
         declined.stop_reason = "refusal"
-        with mock.patch.object(web.client.messages, "create",
-                               side_effect=[fake_reply("Hi!"), declined, fake_reply("Sure, go on.")]) as create:
+        with mock.patch.object(web.client.responses, "create", side_effect=[fake_reply("Hi!"), declined]) as create:
             self.post("/api/start", {"mode": "free"})
-            status, data = self.post("/api/message", {"text": "Hello."})
-        self.assertEqual((status, data["reply"]), (200, "Sure, go on."))
-        self.assertEqual(create.call_args_list[-1].kwargs["model"], tutor.MODEL)
+            _, data = self.post("/api/message", {"text": "Hello."})
+        self.assertEqual(data["type"], "error")
+        self.assertEqual(create.call_count, 2)
 
     def test_the_report_keeps_the_full_model(self) -> None:
-        self.assertIn("model=MODEL", Path(tutor.__file__).read_text().split("def generate_report")[1][:900])
+        self.assertIn("model=MODEL", Path(tutor.__file__).read_text().split("def generate_report")[1].split("def print_report")[0])
 
 
 class TimeUpTest(ServerTestCase, unittest.TestCase):
@@ -82,11 +81,11 @@ class TimeUpTest(ServerTestCase, unittest.TestCase):
         self.auth()
 
     def test_the_last_turn_closes_and_only_that_turn(self) -> None:
-        with mock.patch.object(web.client.messages, "create", return_value=fake_reply("Bye!")) as create:
+        with mock.patch.object(web.client.responses, "create", return_value=fake_reply("Bye!")) as create:
             _, started = self.post("/api/start", {"mode": "free"})
             _, normal = self.post("/api/message", {"text": "One."})
             _, last = self.post("/api/message", {"text": "Two.", "wrap_up": True})
-        systems = [json.dumps(c.kwargs["system"]) for c in create.call_args_list]
+        systems = [json.dumps(c.kwargs["instructions"]) for c in create.call_args_list]
         self.assertNotIn("TIME IS UP", systems[1])
         self.assertIn("TIME IS UP", systems[2])
         self.assertEqual((normal["wrapped"], last["wrapped"]), (False, True))
@@ -125,7 +124,7 @@ class NoThinkingStepTest(ServerTestCase, unittest.TestCase):
         import contextlib
         import io
         log = io.StringIO()
-        with mock.patch.object(web.client.messages, "create",
+        with mock.patch.object(web.client.responses, "create",
                                side_effect=side_effect or (lambda **kw: fake_reply("Hi!"))) as create, \
                 contextlib.redirect_stderr(log):
             self.post("/api/start", {"mode": "free"})
@@ -135,20 +134,17 @@ class NoThinkingStepTest(ServerTestCase, unittest.TestCase):
     def test_conversation_turns_skip_the_thinking_step(self) -> None:
         create, _ = self.talk()
         for call in create.call_args_list:
-            self.assertEqual(call.kwargs["thinking"], {"type": "between_tools"})
+            self.assertEqual(call.kwargs["reasoning"], {"effort": "none"})
 
     def test_it_can_be_switched_back_without_changing_code(self) -> None:
-        with mock.patch.object(tutor, "TURN_THINKING", "on"):
+        with mock.patch.object(tutor, "TURN_EFFORT", "low"):
             create, _ = self.talk()
         for call in create.call_args_list:
-            self.assertNotIn("thinking", call.kwargs)
+            self.assertEqual(call.kwargs["reasoning"], {"effort": "low"})
 
-    def test_the_full_model_retry_keeps_its_thinking(self) -> None:
-        declined = fake_reply("")
-        declined.stop_reason = "refusal"
-        create, _ = self.talk(side_effect=[fake_reply("Hi!"), declined, fake_reply("Go on.")])
-        self.assertEqual(create.call_args_list[-1].kwargs["model"], tutor.MODEL)
-        self.assertNotIn("thinking", create.call_args_list[-1].kwargs)
+    def test_default_models_are_configurable_and_openai_only(self):
+        self.assertEqual(tutor.TURN_MODEL, "gpt-6-luna")
+        self.assertEqual(tutor.MODEL, "gpt-6.1-terra")
 
     def test_each_answer_logs_where_the_seconds_went_and_nothing_said(self) -> None:
         _, log = self.talk()
@@ -158,11 +154,10 @@ class NoThinkingStepTest(ServerTestCase, unittest.TestCase):
         self.assertNotIn("Hello", log)
         self.assertIn("opening timing: AI", log)
 
-    def test_each_model_gets_a_setting_it_accepts(self) -> None:
-        with mock.patch.object(tutor, "TURN_THINKING", "off"):
-            self.assertEqual(tutor.turn_thinking("claude-sonnet-5-5"), {"type": "between_tools"})
-            self.assertIsNone(tutor.turn_thinking("claude-opus-5-5"))
-            self.assertEqual(tutor.turn_thinking("claude-opus-5"), {"type": "disabled"})
+    def test_reasoning_is_explicit_in_every_conversation_request(self):
+        create, _ = self.talk()
+        for call in create.call_args_list:
+            self.assertEqual(call.kwargs["reasoning"]["effort"], tutor.TURN_EFFORT)
 
 
 class SmarterWaitTest(unittest.TestCase):
@@ -186,9 +181,10 @@ class SmarterWaitTest(unittest.TestCase):
 
 
 class LibraryVersionTest(unittest.TestCase):
-    def test_the_anthropic_library_is_held_to_one_major_version(self) -> None:
+    def test_the_openai_library_is_pinned(self) -> None:
         reqs = (Path(web.__file__).parent / "requirements.txt").read_text()
-        self.assertIn("anthropic>=2.3,<3", reqs)
+        self.assertIn("openai==3.51.0", reqs)
+        self.assertNotIn("anthropic", reqs)
 
 
 class StructuredHasNoLimitTest(ServerTestCase, unittest.TestCase):
@@ -207,14 +203,14 @@ class StructuredHasNoLimitTest(ServerTestCase, unittest.TestCase):
         self.assertIn("$('length-row').hidden = $('mode').value === 'structured';", html)
 
     def test_the_server_ignores_a_wrap_up_in_a_structured_class(self) -> None:
-        with mock.patch.object(web.client.messages, "create", return_value=fake_reply("Next part.")) as create:
+        with mock.patch.object(web.client.responses, "create", return_value=fake_reply("Next part.")) as create:
             self.post("/api/start", {"mode": "structured"})
             _, data = self.post("/api/message", {"text": "Done.", "wrap_up": True})
         self.assertFalse(data["wrapped"])
-        self.assertNotIn("TIME IS UP", json.dumps(create.call_args_list[-1].kwargs["system"]))
+        self.assertNotIn("TIME IS UP", json.dumps(create.call_args_list[-1].kwargs["instructions"]))
 
     def test_free_and_business_still_close_on_time(self) -> None:
-        with mock.patch.object(web.client.messages, "create", return_value=fake_reply("Bye!")):
+        with mock.patch.object(web.client.responses, "create", return_value=fake_reply("Bye!")):
             self.post("/api/start", {"mode": "business"})
             _, data = self.post("/api/message", {"text": "Done.", "wrap_up": True})
         self.assertTrue(data["wrapped"])

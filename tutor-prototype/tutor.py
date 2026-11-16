@@ -27,28 +27,13 @@ import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
 
-import anthropic
+import ai
+import store
 
-MODEL = "claude-opus-5"
-# The conversation itself runs on a faster model so the student is not left
-# waiting between turns; the end-of-call report keeps MODEL above, where depth
-# matters more than speed. Override with JUNO_TURN_MODEL.
-TURN_MODEL = os.environ.get("JUNO_TURN_MODEL", "claude-sonnet-5-5")
-# The conversation answers without a separate thinking step, which is most of
-# the "Juno is thinking..." pause. Set JUNO_TURN_THINKING=on to bring it back.
-TURN_THINKING = os.environ.get("JUNO_TURN_THINKING", "off").strip().lower()
-
-
-def turn_thinking(model: str) -> dict | None:
-    """The `thinking` setting that turns thinking off for this model, or None
-    when it should be left as it is (thinking on, or a model that requires it)."""
-    if TURN_THINKING == "on":
-        return None
-    if model.startswith("claude-sonnet-5-5"):
-        return {"type": "between_tools"}      # Sonnet 5.5's way of "no thinking"
-    if model.startswith(("claude-opus-5-5", "claude-fable", "claude-mythos")):
-        return None                            # these cannot switch it off
-    return {"type": "disabled"}
+MODEL = os.environ.get("JUNO_REPORT_MODEL", "gpt-6.1-terra")
+TURN_MODEL = os.environ.get("JUNO_TURN_MODEL", "gpt-6-luna")
+TURN_EFFORT = os.environ.get("JUNO_TURN_EFFORT", "none")
+REPORT_EFFORT = os.environ.get("JUNO_REPORT_EFFORT", "low")
 
 
 # A sentence-ending punctuation mark, as long as it is NOT immediately
@@ -271,24 +256,7 @@ PRONUNCIATION_POLICY = textwrap.dedent("""\
 
 
 def stable_prefix(level: str) -> str:
-    """The half of the system prompt that is identical for every student.
-
-    Split out from the per-student half so it can be cached on its own. Two
-    things follow from that, and both matter:
-
-    Privacy — nothing identifying a student is inside the block marked
-    cacheable. (Anthropic's cache is keyed on an exact prefix match and scoped
-    to our own workspace, so student data in there was never readable by
-    anyone else; it is simply not somewhere personal data belongs.)
-
-    Cost — this ~1,240-token block is now shared by every student at the same
-    level rather than cached once per student, so a class starting after
-    someone else's warms up on their cache entry instead of writing a new one.
-
-    Depends only on `level`, and must stay byte-identical for a given level:
-    interpolating anything per-student or per-call here silently costs the
-    entire saving.
-    """
+    """Stable S&R teaching instructions, shared across students at a level."""
     return "\n".join([
         "You are Juno, the S&R Spain English tutor. You follow the S&R Tutor Playbook "
         "exactly. You are warm, direct, and economical with words — you are not a customer "
@@ -339,7 +307,7 @@ def dynamic_context(level: str, mode: str, scenario: dict | None, student: dict,
                     easier: bool = False) -> str:
     """The per-student half: memory, scenario, this session's grammar point.
 
-    Never marked cacheable. It changes per student and per call, so caching it
+    It changes per student and per call, so embedding it in the stable prefix
     would buy nothing even setting privacy aside.
     """
     parts = [
@@ -424,23 +392,10 @@ def build_system_prompt(level: str, mode: str, scenario: dict | None, student: d
 
 def build_system_blocks(level: str, mode: str, scenario: dict | None,
                         student: dict, easier: bool = False) -> list[dict]:
-    """The system prompt as API blocks: cached prefix, then uncached context.
-
-    Order matters. Caching matches on a prefix, so the stable half has to come
-    first and carry the only breakpoint; the student's half sits after it and
-    is re-read fresh every turn, which is what we want for a few hundred
-    tokens that change anyway.
-    """
+    """Provider-neutral text blocks; no provider cache directives."""
     return [
-        {
-            "type": "text",
-            "text": stable_prefix(level),
-            "cache_control": {"type": "ephemeral"},
-        },
-        {
-            "type": "text",
-            "text": dynamic_context(level, mode, scenario, student, easier),
-        },
+        {"type": "text", "text": stable_prefix(level)},
+        {"type": "text", "text": dynamic_context(level, mode, scenario, student, easier)},
     ]
 
 
@@ -460,7 +415,7 @@ REPORT_TOOL = {
             },
             "corrections": {
                 "type": "array",
-                "minItems": 3,
+                "minItems": 0,
                 "maxItems": 8,
                 "items": {
                     "type": "object",
@@ -472,7 +427,7 @@ REPORT_TOOL = {
                     },
                     "required": ["tier", "said", "better", "note"],
                 },
-                "description": "'You said / Better English' pairs, most useful first.",
+                "description": "'You said / Better English' pairs, most useful first. Only actual mistakes; zero corrections is valid. Never invent errors to fill a quota.",
             },
             "word_traps": {
                 "type": "array",
@@ -591,20 +546,18 @@ REPORT_TOOL = {
 }
 
 
-# Set by web.py when a database is configured: student memory then lives
-# there, so a deploy cannot erase it. None means the JSON files below.
+# Optional memory backend override. The database is authoritative; legacy
+# JSON remains a fallback. Finalised reports save memory and report atomically.
 MEMORY_STORE = None
 
 
 def load_student(student_id: str) -> dict:
-    if MEMORY_STORE is not None:
-        saved = MEMORY_STORE.get_memory(student_id)
-        if saved is not None:
-            return saved
+    saved = (MEMORY_STORE or store).get_memory(student_id)
+    if saved is not None:
+        return saved
     path = STUDENTS_DIR / f"{student_id}.json"
     if path.exists():
         return json.loads(path.read_text())
-    print(f"(no memory record for '{student_id}' — starting fresh)")
     return {
         "student_id": student_id,
         "name": student_id.capitalize(),
@@ -626,6 +579,7 @@ def save_student(student: dict) -> None:
     STUDENTS_DIR.mkdir(parents=True, exist_ok=True)
     path = STUDENTS_DIR / f"{student['student_id']}.json"
     path.write_text(json.dumps(student, indent=2))
+    store.put_memory(student["student_id"], student)
 
 
 class UnknownScenario(ValueError):
@@ -666,27 +620,26 @@ def pick_scenario(scenario_id: str | None, pack: str | None = None) -> dict:
     return random.choice(library)
 
 
-def generate_report(client: anthropic.Anthropic, transcript: list[dict]) -> dict:
+def generate_report(client: ai.Connection, transcript: list[dict], *, student_id="", call_id="", context=None) -> dict:
     report_request = transcript + [{
         "role": "user",
-        "content": "The call has ended. Generate the end-of-call report now by calling "
-                    "submit_session_report, reviewing the whole conversation above for "
-                    "every correctable moment, not just the ones you spoke aloud.",
+        "content": "The call has ended. Generate the end-of-call report now, "
+                   "reviewing the whole conversation above for every correctable moment, "
+                   "not just the ones you spoke aloud.",
     }]
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=4096,
-        system="You are producing the Tutor Playbook §06 end-of-call report from the "
-               "transcript of a call you just finished tutoring. Be specific and honest — "
-               "this report is read by the student and, eventually, by S&R Spain. The "
-               "skill_estimates feed a level shown to the student, so rate only what the "
-               "transcript shows, and lean low when unsure.",
-        messages=report_request,
-        tools=[REPORT_TOOL],
-        tool_choice={"type": "tool", "name": "submit_session_report"},
-    )
-    tool_use = next(b for b in response.content if b.type == "tool_use")
-    return tool_use.input
+    system = ("You are producing the Tutor Playbook §06 end-of-call report from the "
+              "transcript of a call you just finished tutoring. Be specific and honest — "
+              "this report is read by the student and, eventually, by S&R Spain. The "
+              "skill_estimates feed a level shown to the student, so rate only what the "
+              "transcript shows, and lean low when unsure. "
+              "Include only real mistakes; zero corrections is valid. "
+              "Never invent mistakes or claim measured pronunciation from text.")
+    if context:
+        system += "\nThe saved lesson instructions and context follow:\n" + ai.instructions(context)
+    return client.complete(model=MODEL, max_output_tokens=8192, system=system,
+                           messages=report_request, schema=REPORT_TOOL["input_schema"],
+                           effort=REPORT_EFFORT, student_id=student_id, call_id=call_id,
+                           kind="report").report
 
 
 def print_report(report: dict) -> None:
@@ -757,7 +710,7 @@ def apply_report_to_student(student: dict, report: dict, mode: str, scenario: di
     return student
 
 
-def run_call(client: anthropic.Anthropic, level: str, mode: str, scenario: dict | None, student: dict) -> None:
+def run_call(client: ai.Connection, level: str, mode: str, scenario: dict | None, student: dict) -> None:
     system_blocks = build_system_blocks(level, mode, scenario, student)
     messages: list[dict] = []
 
@@ -768,14 +721,14 @@ def run_call(client: anthropic.Anthropic, level: str, mode: str, scenario: dict 
     print("-" * 60 + "\n")
 
     # Juno opens, per the session arc — no user turn yet.
-    opening = client.messages.create(
-        model=MODEL,
-        max_tokens=1024,
+    opening = client.complete(
+        model=TURN_MODEL,
+        effort=TURN_EFFORT, student_id=student["student_id"],
+        max_output_tokens=1024,
         system=system_blocks,
         messages=[{"role": "user", "content": "(the call has just connected — open it)"}],
-        cache_control={"type": "ephemeral"},
     )
-    opening_text = next(b.text for b in opening.content if b.type == "text")
+    opening_text = opening.text
     print(f"Juno: {opening_text}\n")
     messages.append({"role": "user", "content": "(the call has just connected — open it)"})
     messages.append({"role": "assistant", "content": opening_text})
@@ -794,19 +747,19 @@ def run_call(client: anthropic.Anthropic, level: str, mode: str, scenario: dict 
             continue
 
         messages.append({"role": "user", "content": user_input})
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=1024,
+        response = client.complete(
+            model=TURN_MODEL,
+            effort=TURN_EFFORT, student_id=student["student_id"],
+            max_output_tokens=1024,
             system=system_blocks,
             messages=messages,
-            cache_control={"type": "ephemeral"},
-        )
-        reply = next(b.text for b in response.content if b.type == "text")
+            )
+        reply = response.text
         print(f"Juno: {reply}\n")
         messages.append({"role": "assistant", "content": reply})
 
     print("\n(generating report...)")
-    report = generate_report(client, messages)
+    report = generate_report(client, messages, student_id=student["student_id"], context=system_blocks)
     print_report(report)
 
     student = apply_report_to_student(student, report, mode, scenario)
@@ -828,18 +781,13 @@ def main() -> None:
                          help="Business mode only — a scenario id from scenarios.json. "
                               "Random (within --pack, if given) if omitted.")
     parser.add_argument("--model", default=MODEL,
-                         help="Override the model (default: claude-opus-5).")
+                         help="Override the report model (default: JUNO_REPORT_MODEL).")
     args = parser.parse_args()
     MODEL = args.model
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        try:
-            client = anthropic.Anthropic()  # may still resolve via `ant auth login`
-        except Exception:
-            sys.exit("No Anthropic credentials found. Set ANTHROPIC_API_KEY or run "
-                      "`ant auth login`.")
-    else:
-        client = anthropic.Anthropic()
+    if not os.environ.get("OPENAI_API_KEY"):
+        sys.exit("Set OPENAI_API_KEY to run a live class. Offline tests need no key.")
+    client = ai.Connection()
 
     student = load_student(args.student)
     level = args.level or student.get("cefr_level", "B1").rstrip("+")
@@ -853,10 +801,9 @@ def main() -> None:
 
     try:
         run_call(client, level, args.mode, scenario, student)
-    except anthropic.AuthenticationError:
-        sys.exit("Invalid API key. Check ANTHROPIC_API_KEY.")
-    except anthropic.APIConnectionError:
-        sys.exit("Network error reaching the Anthropic API.")
+    except (ai.AIError, store.LimitReached) as error:
+        sys.exit(str(error))
+
 
 
 if __name__ == "__main__":

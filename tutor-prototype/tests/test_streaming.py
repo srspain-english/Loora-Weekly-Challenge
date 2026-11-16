@@ -63,7 +63,7 @@ class StreamingTurnTest(ServerTestCase, unittest.TestCase):
         web.STREAM_REPLIES = self._orig_stream
 
     def test_a_streamed_turn_still_looks_like_an_ordinary_reply(self) -> None:
-        with mock.patch.object(web.client.messages, "create",
+        with mock.patch.object(web.client.responses, "create",
                                return_value=fake_reply("Good morning. How are you today?")):
             self.post("/api/start", {"mode": "free"})
             status, data = self.post("/api/message", {"text": "Hello."})
@@ -72,7 +72,7 @@ class StreamingTurnTest(ServerTestCase, unittest.TestCase):
         self.assertIn("saved_at", data)
 
     def test_the_content_type_is_ndjson_while_streaming_is_on(self) -> None:
-        with mock.patch.object(web.client.messages, "create", return_value=fake_reply("Hi!")):
+        with mock.patch.object(web.client.responses, "create", return_value=fake_reply("Hi!")):
             self.post("/api/start", {"mode": "free"})
             req = __import__("urllib.request", fromlist=["Request"]).Request(
                 f"{self.base_url}/api/message",
@@ -84,17 +84,17 @@ class StreamingTurnTest(ServerTestCase, unittest.TestCase):
                 self.assertIn("ndjson", resp.headers.get("Content-Type", ""))
 
     def test_an_error_mid_stream_is_reported_cleanly(self) -> None:
-        with mock.patch.object(web.client.messages, "create", return_value=fake_reply("Hi!")):
+        with mock.patch.object(web.client.responses, "create", return_value=fake_reply("Hi!")):
             self.post("/api/start", {"mode": "free"})
-        with mock.patch.object(web.client.messages, "create", side_effect=RuntimeError("boom")):
+        with mock.patch.object(web.client.responses, "create", side_effect=RuntimeError("boom")):
             status, data = self.post("/api/message", {"text": "Hello."})
         self.assertEqual(status, 200)  # headers were already sent
         self.assertEqual(data["type"], "error")
-        self.assertIn("your class is saved", data["error"])
+        self.assertIn("last complete exchange is saved", data["error"])
 
     def test_turning_streaming_off_falls_back_to_a_single_reply(self) -> None:
         web.STREAM_REPLIES = False
-        with mock.patch.object(web.client.messages, "create", return_value=fake_reply("Hi!")):
+        with mock.patch.object(web.client.responses, "create", return_value=fake_reply("Hi!")):
             self.post("/api/start", {"mode": "free"})
             status, data = self.post("/api/message", {"text": "Hello."})
         self.assertEqual(status, 200)

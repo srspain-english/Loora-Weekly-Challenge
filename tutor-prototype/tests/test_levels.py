@@ -112,8 +112,8 @@ class LevelEndpointsTest(ServerTestCase, unittest.TestCase):
         self.assertNotIn("pronunciation", props)   # text only: nothing honest to rate
 
         def create(**kw):
-            return fake_report_response() if kw.get("tools") else fake_reply("Hello. And you?")
-        with mock.patch.object(web.client.messages, "create", side_effect=create):
+            return fake_report_response() if kw.get("text", {}).get("format") else fake_reply("Hello. And you?")
+        with mock.patch.object(web.client.responses, "create", side_effect=create):
             _, started = self.post("/api/start", {"mode": "free", "student": "Keeper"})
             self.post("/api/message", {"text": "Hello there."})
             self.post("/api/end", {"call_id": started["call_id"]})

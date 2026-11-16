@@ -39,13 +39,13 @@ class LimitsTest(ServerTestCase, unittest.TestCase):
 
     def _start(self, opener=None, **body):
         with mock.patch.object(
-            web.client.messages, "create", return_value=fake_reply()
+            web.client.responses, "create", return_value=fake_reply()
         ):
             return self.post("/api/start", {"mode": "free", **body}, opener)
 
     def _say(self, text, opener=None, **body):
         with mock.patch.object(
-            web.client.messages, "create", return_value=fake_reply()
+            web.client.responses, "create", return_value=fake_reply()
         ):
             return self.post("/api/message", {"text": text, **body}, opener)
 
@@ -110,7 +110,7 @@ class LimitsTest(ServerTestCase, unittest.TestCase):
     def test_overlong_message_is_refused_before_it_is_billed(self) -> None:
         self.auth()
         self._start(self.opener, student="verbose")
-        with mock.patch.object(web.client.messages, "create") as create:
+        with mock.patch.object(web.client.responses, "create") as create:
             status, _ = self.post(
                 "/api/message", {"text": "x" * (store.MAX_MESSAGE_CHARS + 1)}
             )
@@ -130,16 +130,13 @@ class LimitsTest(ServerTestCase, unittest.TestCase):
 
 class CostEstimateTest(unittest.TestCase):
     def test_cache_reads_are_cheaper_than_fresh_input(self) -> None:
-        fresh = mock.Mock(input_tokens=1_000_000, output_tokens=0,
-                          cache_read_input_tokens=0, cache_creation_input_tokens=0)
-        cached = mock.Mock(input_tokens=0, output_tokens=0,
-                           cache_read_input_tokens=1_000_000,
-                           cache_creation_input_tokens=0)
+        fresh = {"input_tokens": 1_000_000, "output_tokens": 0}
+        cached = {"input_tokens": 1_000_000, "output_tokens": 0, "input_tokens_details": {"cached_tokens": 1_000_000}}
         self.assertLess(store.estimate_cost(cached), store.estimate_cost(fresh))
 
-    def test_missing_usage_costs_nothing_rather_than_raising(self) -> None:
-        # Metrics must never be the reason a class fails.
-        self.assertEqual(store.estimate_cost(None), 0.0)
+    def test_missing_usage_keeps_a_reservation_instead_of_being_free(self):
+        with self.assertRaises(ValueError):
+            store.estimate_cost(None)
 
 
 if __name__ == "__main__":

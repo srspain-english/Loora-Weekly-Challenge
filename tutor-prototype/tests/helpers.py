@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import os
 import sys
 import tempfile
 import threading
@@ -31,74 +32,48 @@ import tutor  # noqa: E402
 import web  # noqa: E402
 
 
-def fake_reply(text: str = "Hello there.", *, cache_read: int = 0,
-               cache_write: int = 0):
-    """A stand-in for one Anthropic response, with a usable usage block."""
-    block = mock.Mock()
-    block.type = "text"
-    block.text = text
-    response = mock.Mock()
-    response.content = [block]
-    response.usage = mock.Mock(
-        input_tokens=120,
-        output_tokens=40,
-        cache_read_input_tokens=cache_read,
-        cache_creation_input_tokens=cache_write,
-    )
-    return response
+from types import SimpleNamespace
+import ai
 
 
-def _fake_stream(*, model, max_tokens, system, messages, cache_control=None, **extra):
-    """Bridge so tests that mock `.create` also cover the streaming turn path.
+class FakeResponse(SimpleNamespace):
+    @property
+    def stop_reason(self):
+        return "refusal" if not self.output_text else "end_turn"
 
-    Production code now calls `client.messages.stream(...)` for a turn, but
-    every existing test mocks `client.messages.create`. Rather than touch
-    every call site, this stands in for `.stream`, looks up whatever
-    `.create` currently resolves to (real or test-patched) and calls it with
-    the same arguments, then wraps the reply as a one-chunk stream. Patched
-    in once by `ServerTestCase`, so each test's own `.create` mock keeps
-    working unchanged.
-    """
-    kwargs = dict(model=model, max_tokens=max_tokens, system=system, messages=messages, **extra)
-    if cache_control is not None:
-        kwargs["cache_control"] = cache_control
-    response = web.client.messages.create(**kwargs)
+    @stop_reason.setter
+    def stop_reason(self, value):
+        if value == "refusal":
+            self.output = [SimpleNamespace(type="message", content=[SimpleNamespace(type="refusal", refusal="No")])]
+            self.output_text = ""
 
-    text = next((b.text for b in response.content if b.type == "text"), "")
-    stream = mock.Mock()
-    stream.text_stream = iter([text])
-    stream.get_final_message = mock.Mock(return_value=response)
+    def __iter__(self):
+        # Several chunks exercise the real stream consumer. Dedicated tests
+        # below cover failures, refusal, ordering and incomplete completion.
+        for chunk in self.chunks:
+            yield SimpleNamespace(type="response.output_text.delta", delta=chunk)
+        yield SimpleNamespace(type="response.completed", response=self)
 
-    manager = mock.MagicMock()
-    manager.__enter__ = mock.Mock(return_value=stream)
-    manager.__exit__ = mock.Mock(return_value=False)
-    return manager
+    def close(self):
+        pass
 
 
-def fake_report_response(report: dict | None = None):
-    """A stand-in for the end-of-call report tool call."""
-    block = mock.Mock()
-    block.type = "tool_use"
-    block.input = report or {
-        "what_we_did": "Practised the present perfect.",
-        "corrections": [],
-        "word_traps": [],
-        "pronunciation": [],
-        "vocabulary_learned": [],
-        "what_went_well": ["Full sentences throughout."],
-        "homework": [],
-        "updated_recurring_error_patterns": [],
-        "next_recommendation": "Keep going.",
+def fake_reply(text="Hello there.", *, cache_read=0, cache_write=0):
+    usage = SimpleNamespace(input_tokens=120 + cache_read + cache_write, output_tokens=40,
+        input_tokens_details=SimpleNamespace(cached_tokens=cache_read, cache_write_tokens=cache_write))
+    return FakeResponse(status="completed", output_text=text,
+        output=[SimpleNamespace(type="message", content=[SimpleNamespace(type="output_text", text=text)])],
+        usage=usage, chunks=[text[:5], text[5:]])
+
+
+def fake_report_response(report=None):
+    response = fake_reply(json.dumps(report if report is not None else {
+        "what_we_did": "Practised the present perfect.", "corrections": [], "word_traps": [],
+        "pronunciation": [], "vocabulary_learned": [], "what_went_well": ["Full sentences throughout."],
+        "homework": [], "updated_recurring_error_patterns": [], "next_recommendation": "Keep going.",
         "grammar_point_taught": "",
         "skill_estimates": {"enough_evidence": True, "fluency": "B1", "grammar": "B1",
-                            "vocabulary": "B1", "understanding": "B2"},
-    }
-    response = mock.Mock()
-    response.content = [block]
-    response.usage = mock.Mock(
-        input_tokens=800, output_tokens=300,
-        cache_read_input_tokens=0, cache_creation_input_tokens=0,
-    )
+                            "vocabulary": "B1", "understanding": "B2"}}))
     return response
 
 
@@ -107,6 +82,8 @@ class ServerTestCase:
 
     @classmethod
     def setUpClass(cls) -> None:
+        if store.using_postgres() and store.DATABASE_URL != os.environ.get("JUNO_TEST_DATABASE_URL"):
+            raise RuntimeError("Tests require an explicitly disposable database")
         cls.tmp = Path(tempfile.mkdtemp())
         store.reset_for_tests(cls.tmp / "juno.db")
         cls._orig_students_dir = tutor.STUDENTS_DIR
@@ -118,12 +95,13 @@ class ServerTestCase:
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
 
-        cls._stream_patch = mock.patch.object(web.client.messages, "stream", side_effect=_fake_stream)
-        cls._stream_patch.start()
+        cls._network_patch = mock.patch.object(ai.Responses, "create",
+            side_effect=AssertionError("Unmocked OpenAI request forbidden in tests"))
+        cls._network_patch.start()
 
     @classmethod
     def tearDownClass(cls) -> None:
-        cls._stream_patch.stop()
+        cls._network_patch.stop()
         cls.server.shutdown()
         cls.server.server_close()
         tutor.STUDENTS_DIR = cls._orig_students_dir

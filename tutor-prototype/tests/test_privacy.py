@@ -39,7 +39,7 @@ class LogsTest(ServerTestCase, unittest.TestCase):
         buffer = io.StringIO()
         with redirect_stderr(buffer):
             with mock.patch.object(
-                web.client.messages, "create", return_value=fake_reply("a reply")
+                web.client.responses, "create", return_value=fake_reply("a reply")
             ):
                 self.post("/api/start", {"mode": "free", "student": "Logged Student"})
                 self.post("/api/message", {"text": said})
@@ -74,7 +74,7 @@ class LogsTest(ServerTestCase, unittest.TestCase):
         buffer = io.StringIO()
         with redirect_stderr(buffer):
             with mock.patch.object(
-                web.client.messages, "create",
+                web.client.responses, "create",
                 side_effect=RuntimeError(f"boom with {SECRET_LOOKING}"),
             ):
                 status, data = self.post(
@@ -82,14 +82,15 @@ class LogsTest(ServerTestCase, unittest.TestCase):
                 )
         # The class fails, but the value must not be spread any further than
         # the exception that already carried it.
-        self.assertEqual(status, 500)
+        self.assertEqual(status, 502)
         self.assertNotIn(SECRET_LOOKING, json.dumps(data))
+        self.assertNotIn(SECRET_LOOKING, buffer.getvalue())
 
 
 class SourceHygieneTest(unittest.TestCase):
     """The repository itself must not carry credentials or a dead integration."""
 
-    FILES = ["web.py", "tutor.py", "store.py", "README.md"]
+    FILES = ["web.py", "tutor.py", "store.py", "ai.py", "README.md"]
 
     def _read(self, name: str) -> str:
         return (Path(__file__).resolve().parent.parent / name).read_text()
@@ -98,7 +99,7 @@ class SourceHygieneTest(unittest.TestCase):
         # Looks for a real key, not the "sk-ant-..." placeholder the docstring
         # uses to show people what to export. A test that cannot tell those
         # apart gets disabled the first time it cries wolf.
-        real_key = re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}")
+        real_key = re.compile(r"sk-(?:proj-|ant-)?[A-Za-z0-9_\-]{30,}")
         for name in self.FILES:
             body = self._read(name)
             with self.subTest(file=name):

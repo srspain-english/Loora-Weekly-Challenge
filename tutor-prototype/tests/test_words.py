@@ -32,11 +32,11 @@ class InClassTest(ServerTestCase, unittest.TestCase):
         self.auth()
 
     def start(self):
-        with mock.patch.object(web.client.messages, "create", return_value=fake_reply("Does it make sense?")):
+        with mock.patch.object(web.client.responses, "create", return_value=fake_reply("Does it make sense?")):
             self.post("/api/start", {"mode": "free", "level": "A2"})
 
     def define(self, word="sense", sentence="Does it make sense?", reply="tener sentido\nIt makes sense to me."):
-        with mock.patch.object(web.client.beta.messages, "create", return_value=model_says(reply)) as create:
+        with mock.patch.object(web.client.responses, "create", return_value=model_says(reply)) as create:
             status, body = self.post("/api/define", {"word": word, "sentence": sentence})
         return status, body, create
 
@@ -45,7 +45,7 @@ class InClassTest(ServerTestCase, unittest.TestCase):
         status, body, create = self.define()
         self.assertEqual(status, 200)
         self.assertEqual(body, {"word": "sense", "meaning": "tener sentido", "example": "It makes sense to me."})
-        sent = create.call_args.kwargs["messages"][0]["content"]
+        sent = create.call_args.kwargs["input"][0]["content"]
         self.assertIn("Does it make sense?", sent)       # meaning in context, not a dictionary list
 
     def test_the_same_word_in_the_same_sentence_is_not_paid_for_twice(self) -> None:
@@ -73,7 +73,7 @@ class InClassTest(ServerTestCase, unittest.TestCase):
 
     def test_a_refusal_is_a_plain_message(self) -> None:
         self.start()
-        with mock.patch.object(web.client.beta.messages, "create", return_value=model_says("", "refusal")):
+        with mock.patch.object(web.client.responses, "create", return_value=model_says("", "refusal")):
             status, body = self.post("/api/define", {"word": "sense", "sentence": "x"})
         self.assertEqual(status, 502)
         self.assertIn("palabra", body["error"])
@@ -83,7 +83,7 @@ class InClassTest(ServerTestCase, unittest.TestCase):
         text = ("Juno te pregunta si tiene sentido.\n"
                 ">> Yes, it makes sense. || Sí, tiene sentido.\n"
                 ">> Sorry, can you say it again? || Perdona, ¿puedes repetirlo?")
-        with mock.patch.object(web.client.beta.messages, "create", return_value=model_says(text)):
+        with mock.patch.object(web.client.responses, "create", return_value=model_says(text)):
             status, body = self.post("/api/help", {})
         self.assertEqual(status, 200)
         self.assertEqual(body["explanation"], "Juno te pregunta si tiene sentido.")

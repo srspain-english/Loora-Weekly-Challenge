@@ -85,7 +85,7 @@ class TeacherViewTest(ServerTestCase, unittest.TestCase):
         open_class(sid, f"{sid}-old", idle_hours=5)
         open_class(sid, f"{sid}-empty", idle_hours=5, turns=1)
         open_class(sid, f"{sid}-now", idle_hours=0.5)          # still going: left alone
-        with mock.patch.object(web.client.messages, "create", return_value=fake_report_response()):
+        with mock.patch.object(web.client.responses, "create", return_value=fake_report_response()):
             status, data = self.admin(action="run_reminders")
         self.assertEqual(status, 200)
         self.assertEqual(data["classes_closed"], {"reported": 1, "dropped": 1, "failed": 0})
@@ -101,7 +101,7 @@ class TeacherViewTest(ServerTestCase, unittest.TestCase):
         open_class(a, f"{a}-x", idle_hours=6)
         open_class(b, f"{b}-y", idle_hours=4)
         replies = [RuntimeError("model busy"), fake_report_response()]
-        with mock.patch.object(web.client.messages, "create", side_effect=replies):
+        with mock.patch.object(web.client.responses, "create", side_effect=replies):
             result = web.close_stale_classes()
         self.assertEqual(result, {"reported": 1, "dropped": 0, "failed": 1})
         self.assertEqual(store.get_call(f"{a}-x")["status"], "open")      # tried again next hour

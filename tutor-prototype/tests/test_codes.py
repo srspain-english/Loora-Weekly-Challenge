@@ -25,7 +25,7 @@ from helpers import ServerTestCase, fake_reply, fake_report_response  # noqa: E4
 
 
 def create(**kw):
-    return fake_report_response() if kw.get("tools") else fake_reply("Hello. And you?")
+    return fake_report_response() if kw.get("text", {}).get("format") else fake_reply("Hello. And you?")
 
 
 class CodesTest(ServerTestCase, unittest.TestCase):
@@ -93,7 +93,7 @@ class CodesTest(ServerTestCase, unittest.TestCase):
 
     def test_an_abandoned_class_is_folded_into_memory_on_the_next_start(self) -> None:
         sid = store.create_student("Sandra", access_code="SANDRA-1111")
-        with mock.patch.object(web.client.messages, "create", side_effect=create):
+        with mock.patch.object(web.client.responses, "create", side_effect=create):
             _, first = self.post("/api/start", {"mode": "free", "access_code": "SANDRA-1111"})
             self.post("/api/message", {"text": "I am working here since two weeks."})
             self.post("/api/message", {"text": "Everybody is very nice with me."})
@@ -112,7 +112,7 @@ class CodesTest(ServerTestCase, unittest.TestCase):
 
     def test_an_easier_english_request_is_kept_in_that_classes_prompt(self) -> None:
         store.create_student("Diego", access_code="DIEGO-3333")
-        with mock.patch.object(web.client.messages, "create", side_effect=create):
+        with mock.patch.object(web.client.responses, "create", side_effect=create):
             _, plain = self.post("/api/start", {"mode": "free", "access_code": "DIEGO-3333"})
             _, easy = self.post("/api/start", {"mode": "free", "access_code": "DIEGO-3333", "easier": True})
         self.assertNotIn("EASIER ENGLISH", store.get_call(plain["call_id"])["system"])
@@ -120,7 +120,7 @@ class CodesTest(ServerTestCase, unittest.TestCase):
 
     def test_a_class_with_nothing_in_it_is_just_dropped(self) -> None:
         sid = store.create_student("Pilar", access_code="PILAR-2222")
-        with mock.patch.object(web.client.messages, "create", side_effect=create):
+        with mock.patch.object(web.client.responses, "create", side_effect=create):
             _, first = self.post("/api/start", {"mode": "free", "access_code": "PILAR-2222"})
             web.SESSIONS.clear()
             back = self.new_browser()

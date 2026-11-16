@@ -21,7 +21,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import anthropic  # noqa: E402
+import ai  # noqa: E402
 import store  # noqa: E402
 import web  # noqa: E402
 from helpers import ServerTestCase, fake_reply, fake_report_response  # noqa: E402
@@ -35,13 +35,13 @@ class RecoveryTest(ServerTestCase, unittest.TestCase):
 
     def _start(self, opener=None, **body):
         with mock.patch.object(
-            web.client.messages, "create", return_value=fake_reply()
+            web.client.responses, "create", return_value=fake_reply()
         ):
             return self.post("/api/start", {"mode": "free", **body}, opener)
 
     def _say(self, text, opener=None, **body):
         with mock.patch.object(
-            web.client.messages, "create", return_value=fake_reply(f"re: {text}")
+            web.client.responses, "create", return_value=fake_reply(f"re: {text}")
         ):
             return self.post("/api/message", {"text": text, **body}, opener)
 
@@ -94,8 +94,9 @@ class RecoveryTest(ServerTestCase, unittest.TestCase):
         web.SESSIONS.clear()
         later = self.new_browser()
         self.auth(later)
+        self.post("/api/resume", {"access_code": "rep-1"}, later)
         with mock.patch.object(
-            web.client.messages, "create", return_value=fake_report_response()
+            web.client.responses, "create", return_value=fake_report_response()
         ):
             status, data = self.post(
                 "/api/end", {"call_id": started["call_id"]}, later
@@ -108,7 +109,7 @@ class RecoveryTest(ServerTestCase, unittest.TestCase):
         self.auth()
         _, started = self._start(self.opener, access_code="done-1")
         with mock.patch.object(
-            web.client.messages, "create", return_value=fake_report_response()
+            web.client.responses, "create", return_value=fake_report_response()
         ):
             self.post("/api/end", {"call_id": started["call_id"]})
         _, data = self.post("/api/resume", {"access_code": "done-1"})
@@ -120,7 +121,7 @@ class RecoveryTest(ServerTestCase, unittest.TestCase):
         self.auth()
         _, started = self._start(self.opener, access_code="twice-1")
         with mock.patch.object(
-            web.client.messages, "create", return_value=fake_report_response()
+            web.client.responses, "create", return_value=fake_report_response()
         ) as create:
             self.post("/api/end", {"call_id": started["call_id"]})
             status, data = self.post("/api/end", {"call_id": started["call_id"]})
@@ -140,13 +141,13 @@ class IdempotencyTest(ServerTestCase, unittest.TestCase):
         # answer, the transcript gains one turn, and the model is called once.
         self.auth()
         with mock.patch.object(
-            web.client.messages, "create", return_value=fake_reply()
+            web.client.responses, "create", return_value=fake_reply()
         ):
             _, started = self.post("/api/start", {"mode": "free", "student": "retry"})
 
         body = {"text": "did this arrive?", "idempotency_key": "abc-123"}
         with mock.patch.object(
-            web.client.messages, "create", return_value=fake_reply("once")
+            web.client.responses, "create", return_value=fake_reply("once")
         ) as create:
             status_a, first = self.post("/api/message", body)
             status_b, second = self.post("/api/message", body)
@@ -163,46 +164,30 @@ class IdempotencyTest(ServerTestCase, unittest.TestCase):
     def test_different_keys_are_different_messages(self) -> None:
         self.auth()
         with mock.patch.object(
-            web.client.messages, "create", return_value=fake_reply()
+            web.client.responses, "create", return_value=fake_reply()
         ):
             self.post("/api/start", {"mode": "free", "student": "distinct"})
         with mock.patch.object(
-            web.client.messages, "create", return_value=fake_reply()
+            web.client.responses, "create", return_value=fake_reply()
         ) as create:
             self.post("/api/message", {"text": "one", "idempotency_key": "k1"})
             self.post("/api/message", {"text": "two", "idempotency_key": "k2"})
         self.assertEqual(create.call_count, 2)
 
 
-class CacheFallbackTest(ServerTestCase, unittest.TestCase):
-    def setUp(self) -> None:
+class ProviderFailureTest(ServerTestCase, unittest.TestCase):
+    def setUp(self):
         self.opener = self.new_browser()
         web.ACCESS_PASSPHRASE = ""
         web.SESSIONS.clear()
 
-    def test_class_continues_uncached_when_the_cached_shape_is_rejected(self) -> None:
-        # Caching is an optimisation. If the API stops accepting the cached
-        # request shape, the student must still get their class.
+    def test_a_failed_opening_does_not_retry_or_leak_provider_errors(self):
         self.auth()
-        rejection = anthropic.BadRequestError(
-            "cache_control not supported",
-            response=mock.Mock(status_code=400, headers={}),
-            body=None,
-        )
-        with mock.patch.object(
-            web.client.messages, "create",
-            side_effect=[rejection, fake_reply("still here")],
-        ) as create:
-            status, data = self.post("/api/start", {"mode": "free", "student": "fb"})
-
-        self.assertEqual(status, 200)
-        self.assertEqual(data["reply"], "still here")
-        self.assertEqual(create.call_count, 2, "no uncached retry was attempted")
-
-        retry_kwargs = create.call_args_list[1].kwargs
-        self.assertIsInstance(retry_kwargs["system"], str,
-                              "the retry should send a plain uncached prompt")
-        self.assertNotIn("cache_control", retry_kwargs)
+        with mock.patch.object(web.client.responses, "create", side_effect=RuntimeError("private provider detail")) as create:
+            status, data = self.post("/api/start", {"mode": "free"})
+        self.assertEqual(status, 502)
+        self.assertEqual(create.call_count, 1)
+        self.assertNotIn("private", data["error"])
 
 
 if __name__ == "__main__":

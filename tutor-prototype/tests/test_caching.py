@@ -1,22 +1,7 @@
 #!/usr/bin/env python3
-"""Tests for prompt caching on the turn-by-turn call loop.
+"""Stable prompt order, growing history and OpenAI cache configuration.
 
-Caching is worth roughly 70% of what a call costs to run, and every way it
-breaks is silent: no error, no behaviour change, just a bill several times
-larger than it should be. Nothing in a normal test run would notice. So the
-conditions it depends on are asserted here instead:
-
-- the requests actually carry the cache markers (someone editing the call
-  sites is the likeliest way this gets dropped);
-- the system prompt is byte-identical across turns, since caching matches on
-  prefix and interpolating a date or a turn counter into it would cost the
-  whole saving;
-- the prompt clears the model's minimum cacheable prefix, below which the
-  API silently declines to cache at all;
-- the end-of-call report is deliberately *not* cached - one request, never
-  read back, and its tools change the prefix anyway.
-
-No network: the Anthropic client is mocked, so this runs with no API key.
+All responses are mocked. Cache savings are measured by usage, never assumed.
 """
 
 from __future__ import annotations
@@ -33,9 +18,8 @@ import tutor  # noqa: E402
 import web  # noqa: E402
 from helpers import ServerTestCase  # noqa: E402
 
-# Opus 5 will not create a cache entry for a prefix shorter than this, and
-# says nothing when it declines. Other models in the same family sit as high
-# as 4096, so this is also the number to revisit if MODEL ever changes.
+# Retain a conservative prompt-size regression floor. This is not a promise
+# of cache eligibility; actual discounts come from reported token usage.
 MIN_CACHEABLE_TOKENS = 512
 CHARS_PER_TOKEN = 4  # deliberately rough; only used for a floor, never a ceiling
 
@@ -48,17 +32,7 @@ STUDENT = {
 }
 
 
-def fake_reply(text: str = "Hello there."):
-    block = mock.Mock()
-    block.type = "text"
-    block.text = text
-    response = mock.Mock()
-    response.content = [block]
-    response.usage = mock.Mock(
-        input_tokens=120, output_tokens=40,
-        cache_read_input_tokens=0, cache_creation_input_tokens=0,
-    )
-    return response
+from helpers import fake_reply, fake_report_response
 
 
 class CacheableSystemTest(unittest.TestCase):
@@ -66,7 +40,7 @@ class CacheableSystemTest(unittest.TestCase):
         scenario = tutor.pick_scenario("on_the_ball")
         blocks = tutor.build_system_blocks("B1", "business", scenario, STUDENT)
         self.assertEqual(len(blocks), 2)
-        self.assertEqual(blocks[0]["cache_control"], {"type": "ephemeral"})
+        self.assertNotIn("cache_control", blocks[0])
         self.assertNotIn("cache_control", blocks[1])
 
     def test_the_cached_block_carries_no_student_data(self) -> None:
@@ -133,25 +107,16 @@ class CallLoopSendsCacheMarkersTest(ServerTestCase, unittest.TestCase):
     def _post(self, path: str, body: dict):
         return self.post(path, body)[1]
 
-    def _assert_cached(self, kwargs: dict) -> None:
-        system = kwargs["system"]
-        self.assertIsInstance(system, list, "system must be blocks to carry a marker")
-        self.assertEqual(len(system), 2, "expected a cached prefix and a dynamic half")
-        self.assertEqual(system[0]["cache_control"], {"type": "ephemeral"})
-        self.assertNotIn(
-            "cache_control", system[1],
-            "the student's own half must never be marked cacheable",
-        )
-        self.assertEqual(
-            kwargs.get("cache_control"),
-            {"type": "ephemeral"},
-            "top-level marker missing - the growing transcript would go uncached",
-        )
+    def _assert_cached(self, kwargs):
+        self.assertIsInstance(kwargs["instructions"], str)
+        self.assertNotIn("cache_control", kwargs)
+        self.assertEqual(kwargs["prompt_cache_options"], {"ttl": "30m"})
+        self.assertFalse(kwargs["store"])
 
     def test_opening_turn_is_cached(self) -> None:
         self._post("/api/auth", {"passphrase": ""})
         with mock.patch.object(
-            web.client.messages, "create", return_value=fake_reply()
+            web.client.responses, "create", return_value=fake_reply()
         ) as create:
             self._post("/api/start", {"student": "demo", "mode": "business"})
         self._assert_cached(create.call_args.kwargs)
@@ -159,7 +124,7 @@ class CallLoopSendsCacheMarkersTest(ServerTestCase, unittest.TestCase):
     def test_every_later_turn_is_cached_too(self) -> None:
         self._post("/api/auth", {"passphrase": ""})
         with mock.patch.object(
-            web.client.messages, "create", return_value=fake_reply()
+            web.client.responses, "create", return_value=fake_reply()
         ) as create:
             self._post("/api/start", {"student": "demo", "mode": "business"})
             for i in range(3):
@@ -170,13 +135,13 @@ class CallLoopSendsCacheMarkersTest(ServerTestCase, unittest.TestCase):
         # Rebuilding it per turn would be the easy way to reintroduce drift.
         self._post("/api/auth", {"passphrase": ""})
         with mock.patch.object(
-            web.client.messages, "create", return_value=fake_reply()
+            web.client.responses, "create", return_value=fake_reply()
         ) as create:
             self._post("/api/start", {"student": "demo", "mode": "business"})
-            sent = [create.call_args.kwargs["system"][0]["text"]]
+            sent = [create.call_args.kwargs["instructions"]]
             for i in range(3):
                 self._post("/api/message", {"text": f"turn {i}"})
-                sent.append(create.call_args.kwargs["system"][0]["text"])
+                sent.append(create.call_args.kwargs["instructions"])
         self.assertEqual(len(set(sent)), 1, "system prompt changed mid-call")
 
     def test_transcript_only_grows(self) -> None:
@@ -184,13 +149,13 @@ class CallLoopSendsCacheMarkersTest(ServerTestCase, unittest.TestCase):
         # would invalidate everything from the edit onward.
         self._post("/api/auth", {"passphrase": ""})
         with mock.patch.object(
-            web.client.messages, "create", return_value=fake_reply()
+            web.client.responses, "create", return_value=fake_reply()
         ) as create:
             self._post("/api/start", {"student": "demo", "mode": "business"})
-            previous = list(create.call_args.kwargs["messages"])
+            previous = list(create.call_args.kwargs["input"])
             for i in range(3):
                 self._post("/api/message", {"text": f"turn {i}"})
-                current = create.call_args.kwargs["messages"]
+                current = create.call_args.kwargs["input"]
                 self.assertEqual(
                     current[: len(previous)], previous, "earlier turns were rewritten"
                 )
@@ -198,20 +163,17 @@ class CallLoopSendsCacheMarkersTest(ServerTestCase, unittest.TestCase):
                 previous = list(current)
 
 
-class ReportIsNotCachedTest(unittest.TestCase):
+class ReportIsNotCachedTest(ServerTestCase, unittest.TestCase):
     def test_report_call_carries_no_cache_marker(self) -> None:
         # A single request: a cache write here is paid for and never read.
-        client = mock.Mock()
-        tool_block = mock.Mock()
-        tool_block.type = "tool_use"
-        tool_block.input = {"what_we_did": "practised"}
-        client.messages.create.return_value = mock.Mock(content=[tool_block])
-
-        tutor.generate_report(client, [{"role": "user", "content": "hi"}])
-
-        kwargs = client.messages.create.call_args.kwargs
+        import ai
+        client = ai.Connection()
+        with mock.patch.object(client.responses, "create", return_value=fake_report_response()) as create:
+            tutor.generate_report(client, [{"role": "user", "content": "hi"}])
+        kwargs = create.call_args.kwargs
         self.assertNotIn("cache_control", kwargs)
-        self.assertIsInstance(kwargs["system"], str)
+        self.assertIsInstance(kwargs["instructions"], str)
+        self.assertTrue(kwargs["text"]["format"]["strict"])
 
 
 if __name__ == "__main__":

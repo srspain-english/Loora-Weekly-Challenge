@@ -11,8 +11,8 @@ the class away.
 SQLite rather than JSON files: the server is threaded, so two requests can
 write at the same moment, and a read-modify-write on a JSON file loses one of
 them silently. SQLite is in the standard library and serialises writes for us.
-Student memory records stay as JSON files (tutor.load_student) — they predate
-this and are left exactly where they are.
+Legacy student JSON files remain in place as a fallback. New report-derived
+memory is committed in this database atomically with its class report.
 
 A note on durability: on Render's free tier the disk is wiped by every deploy.
 Set JUNO_DATABASE_URL to a Postgres address (for example a free Neon project)
@@ -31,6 +31,8 @@ import sqlite3
 import threading
 import time
 import unicodedata
+from contextlib import contextmanager
+from functools import wraps
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -65,14 +67,16 @@ DAILY_COST_CEILING_USD = _float_env("JUNO_DAILY_COST_CEILING_USD", 5.0)
 # Per-session warning threshold — logged, never shown to the student.
 SESSION_COST_WARN_USD = _float_env("JUNO_SESSION_COST_WARN_USD", 1.0)
 
-# Opus 5 list prices, $ per million tokens. Only used for the running cost
-# estimate in the metrics log; nothing bills off these numbers.
-PRICE_INPUT = 5.00
-PRICE_OUTPUT = 25.00
-PRICE_CACHE_WRITE = 6.25  # 1.25x input, 5-minute TTL
-PRICE_CACHE_READ = 0.50   # 0.1x input
+# USD / million tokens, Standard tier, checked 2026-11-16.
+# input, cached reads, cache writes, output. Custom models fail closed until
+# explicitly configured in JUNO_OPENAI_PRICES_JSON with these four values.
+OPENAI_PRICES = {
+    "gpt-6-luna": (0.10, 0.01, 0.125, 0.50),
+    "gpt-6.1-terra": (1.00, 0.05, 1.25, 5.00),
+    "gpt-6.1-sol": (2.00, 0.10, 2.50, 10.00),
+}
 
-_LOCK = threading.Lock()
+_LOCK = threading.RLock()
 _conn = None
 
 DATABASE_URL = os.environ.get("JUNO_DATABASE_URL", "").strip()
@@ -111,6 +115,7 @@ class _PgConnection:
         self._url = url
         self._lock = threading.RLock()
         self._pg = None
+        self._dirty = False
         self._open()
 
     def _open(self):
@@ -145,11 +150,15 @@ class _PgConnection:
                 try:
                     cur = self._pg.cursor()
                     cur.execute(s, tuple(params))
+                    if not s.lstrip().upper().startswith("SELECT"):
+                        self._dirty = True
                     return _PgCursor(cur)
                 except (psycopg.OperationalError, psycopg.InterfaceError):
-                    if attempt == 2:
-                        raise
+                    retry_read = not self._dirty and s.lstrip().upper().startswith("SELECT")
                     self._open()
+                    self._dirty = False
+                    if attempt == 2 or not retry_read:
+                        raise
                 except Exception:
                     self._pg.rollback()
                     raise
@@ -163,10 +172,12 @@ class _PgConnection:
                 if body:
                     self.execute(body)
             self._pg.commit()
+            self._dirty = False
 
     def commit(self) -> None:
         with self._lock:
             self._pg.commit()
+            self._dirty = False
 
     def close(self) -> None:
         with self._lock:
@@ -200,9 +211,11 @@ def reset_for_tests(path: Path | None = None) -> None:
         if path is not None:
             DB_PATH = path
     if using_postgres():
+        if not os.environ.get("JUNO_TEST_DATABASE_URL") or DATABASE_URL != os.environ["JUNO_TEST_DATABASE_URL"]:
+            raise RuntimeError("Refusing to reset a non-test Postgres database")
         conn = connect()
         conn.execute("TRUNCATE students, usage_daily, spend_daily, calls,"
-                     " idempotency, student_memory, feedback")
+                     " idempotency, student_memory, feedback, ai_reservations, call_locks, turn_attempts")
         conn.commit()
 
 
@@ -274,6 +287,17 @@ def _init_schema(conn) -> None:
         );
 
         -- Replayed requests must not append the same turn twice.
+        CREATE TABLE IF NOT EXISTS ai_reservations (
+            request_id TEXT PRIMARY KEY, day TEXT NOT NULL, model TEXT NOT NULL,
+            student_id TEXT NOT NULL, call_id TEXT NOT NULL, kind TEXT NOT NULL,
+            amount REAL NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS call_locks (
+            call_id TEXT PRIMARY KEY, token TEXT NOT NULL, created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS turn_attempts (
+            key TEXT PRIMARY KEY, call_id TEXT NOT NULL, created_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS idempotency (
             key        TEXT PRIMARY KEY,
             call_id    TEXT NOT NULL,
@@ -536,23 +560,169 @@ def record_usage(student_id: str, cost_usd: float, turns: int = 1) -> None:
     conn.commit()
 
 
-def estimate_cost(usage) -> float:
-    """Dollar estimate for one API response, from its usage block.
+def _prices(model):
+    import math
+    prices = dict(OPENAI_PRICES)
+    configured = json.loads(os.environ.get("JUNO_OPENAI_PRICES_JSON", "{}"))
+    prices.update(configured)
+    if model not in prices:
+        raise LimitReached("This model has no approved price configuration.")
+    if len(prices[model]) != 4 or any(not isinstance(x, (int, float)) or not math.isfinite(x) or x < 0 for x in prices[model]):
+        raise LimitReached("Invalid model price configuration.")
+    return tuple(prices[model])
 
-    Cache reads are a tenth of normal input and cache writes a quarter more,
-    so a run where these are collapsed into one number hides exactly the thing
-    worth watching.
-    """
-    def _n(attr: str) -> int:
-        value = getattr(usage, attr, None) if usage is not None else None
-        return int(value or 0)
 
-    return (
-        _n("input_tokens") / 1e6 * PRICE_INPUT
-        + _n("output_tokens") / 1e6 * PRICE_OUTPUT
-        + _n("cache_creation_input_tokens") / 1e6 * PRICE_CACHE_WRITE
-        + _n("cache_read_input_tokens") / 1e6 * PRICE_CACHE_READ
-    )
+def estimate_cost(usage, model="gpt-6-luna") -> float:
+    if usage is None:
+        raise ValueError("Missing usage must retain its budget reservation")
+    def number(obj, key):
+        value = obj.get(key, 0) if isinstance(obj, dict) else getattr(obj, key, 0)
+        import math
+        if not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            raise ValueError("Invalid token usage")
+        return value
+    for field in ("input_tokens", "output_tokens"):
+        if (isinstance(usage, dict) and field not in usage) or (not isinstance(usage, dict) and not hasattr(usage, field)):
+            raise ValueError("Incomplete token usage")
+    rates = _prices(model)
+    total = number(usage, "input_tokens")
+    details = usage.get("input_tokens_details", {}) if isinstance(usage, dict) else getattr(usage, "input_tokens_details", None)
+    cached = number(details, "cached_tokens")
+    written = number(details, "cache_write_tokens")
+    write_details = details.get("cache_write_tokens_details", {}) if isinstance(details, dict) else getattr(details, "cache_write_tokens_details", None)
+    long_writes = number(write_details, "ttl_12h_tokens")
+    if cached + written > total or long_writes > written:
+        raise ValueError("Inconsistent token usage")
+    # Output includes reasoning tokens already: do not add them a second time.
+    return ((total - cached - written) * rates[0] + cached * rates[1]
+            + (written + long_writes) * rates[2]
+            + number(usage, "output_tokens") * rates[3]) / 1e6
+
+
+def _lock_budget(conn, day):
+    conn.execute("INSERT OR IGNORE INTO spend_daily (day, cost_usd) VALUES (?,0)", (day,))
+    suffix = " FOR UPDATE" if using_postgres() else ""
+    return conn.execute("SELECT cost_usd FROM spend_daily WHERE day = ?" + suffix, (day,)).fetchone()["cost_usd"]
+
+
+def reserve_ai(model, input_bound, max_output, *, student_id="", call_id="", kind="turn"):
+    rates = _prices(model)
+    import math
+    if not math.isfinite(DAILY_COST_CEILING_USD) or DAILY_COST_CEILING_USD <= 0:
+        raise LimitReached("Juno's spending limit is disabled. Your class is saved.")
+    amount = (input_bound * max(rates[:3]) + max_output * rates[3]) / 1e6
+    conn = connect()
+    day = _today()
+    if not using_postgres():
+        conn.execute("BEGIN IMMEDIATE")
+    try:
+        spent = _lock_budget(conn, day)
+        held = conn.execute("SELECT COALESCE(SUM(amount),0) AS total FROM ai_reservations"
+                            " WHERE day = ? AND status != 'settled'", (day,)).fetchone()["total"]
+        if DAILY_COST_CEILING_USD <= 0 or spent + held + amount > DAILY_COST_CEILING_USD:
+            raise LimitReached("Juno has reached today's spending limit. Your class is saved.")
+        request_id = "req_" + secrets.token_urlsafe(18)
+        conn.execute("INSERT INTO ai_reservations VALUES (?,?,?,?,?,?,?,?,?)",
+                     (request_id, day, model, student_id, call_id, kind, amount, "pending", _now()))
+        conn.commit()
+        return request_id
+    except Exception:
+        if using_postgres():
+            conn._pg.rollback()
+        else:
+            conn.rollback()
+        raise
+
+
+def settle_ai(request_id, usage):
+    conn = connect()
+    row = conn.execute("SELECT * FROM ai_reservations WHERE request_id = ?", (request_id,)).fetchone()
+    if not row or row["status"] == "settled":
+        return
+    try:
+        cost = estimate_cost(usage, row["model"])
+    except (ValueError, TypeError):
+        conn.execute("UPDATE ai_reservations SET status = 'uncertain' WHERE request_id = ?", (request_id,))
+        conn.commit()
+        return
+    if not using_postgres():
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
+    _lock_budget(conn, row["day"])
+    # Budget row lock serialises settlement across processes too.
+    current = conn.execute("SELECT status FROM ai_reservations WHERE request_id = ?", (request_id,)).fetchone()
+    if current["status"] != "settled":
+        conn.execute("UPDATE spend_daily SET cost_usd = cost_usd + ? WHERE day = ?", (cost, row["day"]))
+        if row["student_id"]:
+            conn.execute("INSERT OR IGNORE INTO usage_daily (student_id, day) VALUES (?,?)", (row["student_id"], row["day"]))
+            conn.execute("UPDATE usage_daily SET cost_usd = cost_usd + ? WHERE student_id = ? AND day = ?", (cost, row["student_id"], row["day"]))
+        conn.execute("UPDATE ai_reservations SET amount = ?, status = 'settled' WHERE request_id = ?", (cost, request_id))
+    conn.commit()
+
+
+class CallBusy(Exception):
+    pass
+
+
+@contextmanager
+def call_guard(call_id):
+    token = secrets.token_urlsafe(18)
+    with _LOCK:
+        conn = connect()
+        conn.execute("INSERT OR IGNORE INTO call_locks VALUES (?,?,?)", (call_id, token, _now()))
+        conn.commit()
+        row = conn.execute("SELECT token FROM call_locks WHERE call_id = ?", (call_id,)).fetchone()
+        if row["token"] != token:
+            raise CallBusy("This class is already processing a request. Please wait.")
+    try:
+        yield
+    finally:
+        with _LOCK:
+            conn.execute("DELETE FROM call_locks WHERE call_id = ? AND token = ?", (call_id, token))
+            conn.commit()
+
+
+def claim_turn(key, call_id):
+    conn = connect()
+    if conn.execute("SELECT key FROM turn_attempts WHERE key = ?", (key,)).fetchone():
+        raise CallBusy("This request already ran but its result is uncertain. Resume your saved class.")
+    conn.execute("INSERT INTO turn_attempts VALUES (?,?,?)", (key, call_id, _now()))
+    conn.commit()
+
+
+def release_unbilled_turn(key):
+    conn = connect()
+    conn.execute("DELETE FROM turn_attempts WHERE key = ?", (key,))
+    conn.commit()
+
+
+def commit_turn(call_id, transcript, turns, key, payload):
+    conn = connect()
+    current = get_call(call_id)
+    if not current or current["status"] != "open" or current["turns"] != turns - 1:
+        raise CallBusy("The class changed. Resume it before continuing.")
+    conn.execute("UPDATE calls SET transcript = ?, turns = ?, updated_at = ? WHERE call_id = ?",
+                 (json.dumps(transcript), turns, _now(), call_id))
+    conn.execute("INSERT OR REPLACE INTO idempotency (key, call_id, response, created_at) VALUES (?,?,?,?)",
+                 (key, call_id, json.dumps(payload), _now()))
+    conn.execute("UPDATE usage_daily SET turns = turns + 1 WHERE student_id = ? AND day = ?",
+                 (current["student_id"], _today()))
+    conn.commit()
+
+
+def finalize_report(call_id, report, memory):
+    """One transaction commits memory and report. JSON legacy files stay untouched."""
+    conn = connect()
+    current = get_call(call_id)
+    if current["status"] != "open":
+        return current["report"]
+    conn.execute("INSERT INTO student_memory (student_id, memory, updated_at) VALUES (?,?,?)"
+                 " ON CONFLICT(student_id) DO UPDATE SET memory = excluded.memory, updated_at = excluded.updated_at",
+                 (current["student_id"], json.dumps(memory), _now()))
+    conn.execute("UPDATE calls SET status = 'ended', ended_at = ?, updated_at = ?, report = ? WHERE call_id = ?",
+                 (_now(), _now(), json.dumps(report), call_id))
+    conn.commit()
+    return report
 
 
 # --- Calls -------------------------------------------------------------
@@ -866,7 +1036,7 @@ def notes_for(student_id: str, limit: int = 30) -> list[dict]:
 
 
 # --- Level and skill estimates ----------------------------------------------
-# Each finished class's report carries Claude's CEFR rating of four skills.
+# Each finished class's report carries the tutor's CEFR rating of four skills.
 # One class is a noisy sample, so the Progress screen only shows an estimate
 # once there are a couple of well-evidenced classes, and then averages the
 # latest few. A rating of "B1" means somewhere inside B1, so it counts as the
@@ -1091,3 +1261,30 @@ def stale_open_calls(idle_hours: float = 3) -> list[dict]:
         "SELECT call_id FROM calls WHERE status = 'open' AND updated_at < ? ORDER BY updated_at",
         (cutoff,)).fetchall()
     return [get_call(r["call_id"]) for r in rows]
+
+
+def _serialized(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        with _LOCK:
+            try:
+                return fn(*args, **kwargs)
+            except Exception:
+                if _conn is not None:
+                    try:
+                        if using_postgres():
+                            _conn._pg.rollback()
+                            _conn._dirty = False
+                        else:
+                            _conn.rollback()
+                    except Exception:
+                        pass
+                raise
+    return wrapped
+
+
+for _name, _fn in list(globals().items()):
+    if (callable(_fn) and getattr(_fn, "__module__", None) == __name__
+            and not _name.startswith("_") and _name not in ("call_guard",)
+            and not isinstance(_fn, type)):
+        globals()[_name] = _serialized(_fn)

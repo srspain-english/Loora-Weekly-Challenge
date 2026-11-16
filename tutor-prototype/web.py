@@ -8,12 +8,12 @@ memory — reached through a chat webpage instead of Terminal, with real
 voice input/output in supporting browsers.
 
 Local use (unchanged from before):
-    export ANTHROPIC_API_KEY=sk-ant-...
+    export OPENAI_API_KEY=(your server-side key)
     python3 web.py
 Opens http://127.0.0.1:8765 automatically. No passphrase needed.
 
 Deployed use (e.g. Render): set environment variables
-    ANTHROPIC_API_KEY        - required
+    OPENAI_API_KEY        - required
     JUNO_ACCESS_PASSPHRASE   - required once this is reachable by anyone
                                 other than you; gates every call
     PORT                     - set automatically by most hosts
@@ -22,7 +22,7 @@ When PORT is set in the environment, this binds to 0.0.0.0 instead of
 only makes sense on your own machine.
 
 Unauthenticated public deployments are a real risk: every message
-spends your Anthropic API credit with no limit. Always set
+can spend OpenAI API credit up to the configured budget. Always set
 JUNO_ACCESS_PASSPHRASE before sharing a deployed URL with anyone.
 """
 
@@ -35,14 +35,14 @@ import secrets
 import sys
 import threading
 import time
-import traceback
 import webbrowser
 from datetime import datetime, timezone
 from html import escape as html_escape
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import anthropic
+import ai
+import hashlib
 
 import autoreminders  # the daily run that emails students who asked for it
 import emailer  # sending those emails
@@ -1182,9 +1182,10 @@ function makeSpeechQueue(onDone) {
   const queue = [];
   let speaking = false;
   let finished = false;
+  let cancelled = false;
 
   function pump() {
-    if (speaking) return;
+    if (cancelled || speaking) return;
     if (!$('speak-toggle').checked || !window.speechSynthesis || paused) {
       queue.length = 0;
       if (finished) onDone();
@@ -1203,6 +1204,10 @@ function makeSpeechQueue(onDone) {
   return {
     push(text) { queue.push(text); pump(); },
     finish() { finished = true; pump(); },
+    cancel() {
+      cancelled = true; queue.length = 0;
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+    },
   };
 }
 $('speak-toggle').onchange = () => {
@@ -1780,6 +1785,8 @@ $('start-btn').onclick = async () => {
     currentCallId = data.call_id;
     classInProgress = true;
     clearChat();
+    pendingTurn = null;
+    if (queue && !shown) queue.push(data.reply);
     bubble('juno', data.reply);
     showSaved(data.saved_at);
     setStatus('setup-status', '');
@@ -1802,6 +1809,7 @@ let endAfterSpeaking = false;
 let currentCallId = null;
 let classInProgress = false;
 
+let pendingTurn = null;
 async function sendMessage() {
   if (sending) return;               // a second Enter while the first is in flight
   const input = $('msg-input');
@@ -1810,7 +1818,10 @@ async function sendMessage() {
 
   // Generated once per attempt and reused if we retry, so the server can
   // recognise a repeat instead of adding the same turn twice.
-  const key = `${currentCallId || 'call'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  if (!pendingTurn || pendingTurn.text !== text) {
+    pendingTurn = { text, key: crypto.randomUUID() };
+  }
+  const key = pendingTurn.key;
 
   sending = true;
   const before = junoLine;
@@ -1841,6 +1852,8 @@ async function sendMessage() {
         if (queue) queue.push(sentence);
       },
     });
+    pendingTurn = null;
+    if (queue && !shown) queue.push(data.reply);
     bubble('juno', data.reply);
     showSaved(data.saved_at);
     sending = false;
@@ -1862,6 +1875,9 @@ async function sendMessage() {
         `${data.turns_left} messages left in this class — press End when you're ready for your report.`;
     }
   } catch (e) {
+    if (queue) queue.cancel();
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    input.value = text;
     setJunoLine(before);
     $('chat-error').textContent = e.message;
     setStatus('chat-status',
@@ -2582,14 +2598,14 @@ $('create').onclick = async () => {
 </script></div></body></html>
 """
 
-client = anthropic.Anthropic()
+client = ai.Connection()
 
 
 def log_timing(kind: str, *, ai: float, retried: bool,
                database: float | None = None, total: float | None = None) -> None:
     """One line per answer in the server log: where the seconds went. Times and
     model only, never what anyone said."""
-    thinking = "off" if tutor.turn_thinking(tutor.TURN_MODEL) else "on"
+    thinking = "off" if tutor.TURN_EFFORT == "none" else "on"
     parts = []
     if database is not None:
         parts.append(f"database {database:.2f} s")
@@ -2602,20 +2618,32 @@ def log_timing(kind: str, *, ai: float, retried: bool,
           file=sys.stderr, flush=True)
 
 
+def finish_report(call_id):
+    initial = store.get_call(call_id)
+    with store.call_guard("student:" + initial["student_id"]), store.call_guard(call_id):
+        call = store.get_call(call_id)
+        if call["status"] != "open":
+            return call.get("report")
+        report = tutor.generate_report(client, call["transcript"], student_id=call["student_id"],
+                                       call_id=call_id, context=json.loads(call["system"]))
+        memory = tutor.apply_report_to_student(
+            tutor.load_student(call["student_id"]), report, call["mode"],
+            {"id": call["scenario_id"]} if call["scenario_id"] else None)
+        return store.finalize_report(call_id, report, memory)
+
+
 def fold_unfinished_class(call: dict) -> str:
-    """Close a class the student never ended: write its report and fold what
-    it taught into their memory, exactly as pressing End would have. A class
-    with almost nothing said is just dropped. Returns 'reported' or 'dropped'."""
+    """Cron, recovery and End all share the same finalisation guard."""
     if call["turns"] < 2:
-        store.abandon_call(call["call_id"])
-        return "dropped"
-    report = tutor.generate_report(client, call["transcript"])
-    memory = tutor.load_student(call["student_id"])
-    memory = tutor.apply_report_to_student(
-        memory, report, call["mode"],
-        {"id": call["scenario_id"]} if call["scenario_id"] else None)
-    tutor.save_student(memory)
-    store.finish_call(call["call_id"], report)
+        with store.call_guard(call["call_id"]):
+            current = store.get_call(call["call_id"])
+            if current["status"] == "open" and current["turns"] < 2:
+                store.abandon_call(call["call_id"])
+                return "dropped"
+        if current["status"] == "open" and current["turns"] >= 2:
+            finish_report(call["call_id"])
+        return "reported"
+    finish_report(call["call_id"])
     return "reported"
 
 
@@ -2645,7 +2673,7 @@ def close_stale_classes(idle_hours: float = 3) -> dict:
             done[fold_unfinished_class(call)] += 1
         except Exception as e:  # noqa: BLE001
             done["failed"] += 1
-            print(f"[juno] could not close an old class: {e!r}", file=sys.stderr, flush=True)
+            print(f"[juno] could not close an old class: {type(e).__name__}", file=sys.stderr, flush=True)
     return done
 
 
@@ -2838,6 +2866,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": "not found"}, 404)
         except _AuthError:
             self._send_json({"error": "Not authenticated."}, 401)
+        except store.LimitReached as e:
+            self._send_json({"error": str(e)}, 429)
+        except store.CallBusy as e:
+            self._send_json({"error": str(e)}, 409)
+        except ai.AIError as e:
+            self._send_json({"error": str(e)}, 502)
         except tutor.UnknownScenario as e:
             # Bad input from the page, not a server fault - usually a stale
             # tab holding scenario ids from an older scenarios.json.
@@ -2848,8 +2882,7 @@ class Handler(BaseHTTPRequestHandler):
             # whatever a library chose to interpolate into it - none of which
             # a student's browser should ever receive. They get a sentence
             # they can act on; the operator gets the traceback.
-            print(f"[juno] unhandled error on {self.path}: {e!r}", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
+            print(f"[juno] request failed: {type(e).__name__}", file=sys.stderr)
             self._send_json(
                 {"error": "Something went wrong on our side. Please try again — "
                           "your class is saved."},
@@ -2875,170 +2908,53 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "Wrong passphrase."}, 401)
 
-    def _ask_once(self, model: str, fast: bool, system_blocks, flat: str, messages):
-        """One non-streaming request to the model, with the cache-shape retry.
-
-        Shared by `_call_model` (every turn, until the fast model declines)
-        and `_call_model_streaming`'s own fallback (the full model, once that
-        happens) - same request, so it's written once.
-        """
-        # Low effort, and for the fast model no separate thinking step: a
-        # conversational reply needs speed far more than deep reasoning, and
-        # the student is waiting in silence.
-        extra = {"output_config": {"effort": "low"}}
-        thinking = tutor.turn_thinking(model) if fast else None
-        if thinking:
-            extra["thinking"] = thinking
-        try:
-            return client.messages.create(
-                model=model, max_tokens=2048,
-                system=system_blocks, messages=messages,
-                cache_control={"type": "ephemeral"}, **extra,
-            )
-        except anthropic.BadRequestError as e:
-            print(f"[juno] cache-shape rejected, retrying uncached: {e}",
-                  file=sys.stderr)
-            return client.messages.create(
-                model=model, max_tokens=2048,
-                system=flat, messages=messages, **extra,
-            )
-
-    def _call_model(self, system_blocks, messages, *, student_id, call_id,
-                    kind: str) -> str:
-        """One turn against the model: cached if possible, billed either way.
-
-        Caching is an optimisation, never a dependency. If the API rejects the
-        cached shape — an unsupported block layout, a prefix under the model's
-        minimum, a change on their side — the class carries on uncached rather
-        than failing in front of a student. That fallback is the whole reason
-        `_ask_once` exists instead of an inline call.
-        """
-        flat = "\n".join(b["text"] for b in system_blocks)
+    def _call_model(self, system_blocks, messages, *, student_id, call_id, kind: str) -> str:
         started = time.monotonic()
-        response = self._ask_once(tutor.TURN_MODEL, True, system_blocks, flat, messages)
-        self._record_metrics(response, student_id=student_id, call_id=call_id,
-                             kind=kind)
-        text = next((b.text for b in response.content if b.type == "text"), "")
-        if response.stop_reason == "refusal" or not text.strip():
-            # The fast model declined or said nothing: ask the full model once
-            # rather than leave the student facing silence.
-            response = self._ask_once(tutor.MODEL, False, system_blocks, flat, messages)
-            self._record_metrics(response, student_id=student_id, call_id=call_id,
-                                 kind=kind)
-            text = next((b.text for b in response.content if b.type == "text"),
-                        "Sorry, could you say that again?")
-            self.last_retried = True
-        else:
-            self.last_retried = False
+        result = client.complete(model=tutor.TURN_MODEL, effort=tutor.TURN_EFFORT,
+                                 system=system_blocks, messages=messages,
+                                 student_id=student_id, call_id=call_id, kind=kind)
+        self._record_metrics(result, student_id=student_id, call_id=call_id, kind=kind)
         self.last_ai_seconds = time.monotonic() - started
-        return text
+        self.last_retried = False
+        return result.text
 
-    def _call_model_streaming(self, system_blocks, messages, *, student_id, call_id,
-                              kind: str, on_delta) -> str:
-        """Like `_call_model`, but calls `on_delta(sentence)` as each sentence
-        of the reply is finished, instead of waiting for the whole thing.
-
-        This is most of what actually shortens "Juno is thinking..." - the
-        turn used to wait for every word before speaking any of it. Falls
-        back to `_call_model`'s own (non-streaming) full-model retry if the
-        fast model declines or says nothing, exactly as `_call_model` does -
-        that path is rare, and a refusal carries no text to have spoken
-        early anyway, so simplicity wins over streaming it too.
-        """
-        flat = "\n".join(b["text"] for b in system_blocks)
-        extra = {"output_config": {"effort": "low"}}
-        thinking = tutor.turn_thinking(tutor.TURN_MODEL)
-        if thinking:
-            extra["thinking"] = thinking
+    def _call_model_streaming(self, system_blocks, messages, *, student_id, call_id, kind: str, on_delta) -> str:
         buffer = ""
-
-        def consume(stream) -> None:
+        def consume(piece):
             nonlocal buffer
-            for piece in stream.text_stream:
-                buffer += piece
-                ready, buffer = tutor.split_ready_sentences(buffer)
-                for sentence in ready:
-                    on_delta(sentence)
-
+            buffer += piece
+            ready, buffer = tutor.split_ready_sentences(buffer)
+            for sentence in ready:
+                on_delta(sentence)
         started = time.monotonic()
-        try:
-            with client.messages.stream(
-                model=tutor.TURN_MODEL, max_tokens=2048,
-                system=system_blocks, messages=messages,
-                cache_control={"type": "ephemeral"}, **extra,
-            ) as stream:
-                consume(stream)
-                final = stream.get_final_message()
-        except anthropic.BadRequestError as e:
-            print(f"[juno] cache-shape rejected, retrying uncached: {e}",
-                  file=sys.stderr)
-            buffer = ""
-            with client.messages.stream(
-                model=tutor.TURN_MODEL, max_tokens=2048,
-                system=flat, messages=messages, **extra,
-            ) as stream:
-                consume(stream)
-                final = stream.get_final_message()
-
-        self._record_metrics(final, student_id=student_id, call_id=call_id,
-                             kind=kind)
-        text = next((b.text for b in final.content if b.type == "text"), "")
-        if final.stop_reason == "refusal" or not text.strip():
-            response = self._ask_once(tutor.MODEL, False, system_blocks, flat, messages)
-            self._record_metrics(response, student_id=student_id, call_id=call_id,
-                                 kind=kind)
-            text = next((b.text for b in response.content if b.type == "text"),
-                        "Sorry, could you say that again?")
-            on_delta(text)
-            self.last_retried = True
-        else:
-            if buffer.strip():
-                on_delta(buffer.strip())
-            self.last_retried = False
+        result = client.complete(model=tutor.TURN_MODEL, effort=tutor.TURN_EFFORT,
+                                 system=system_blocks, messages=messages, on_delta=consume,
+                                 student_id=student_id, call_id=call_id, kind=kind)
+        if buffer.strip():
+            on_delta(buffer.strip())
+        self._record_metrics(result, student_id=student_id, call_id=call_id, kind=kind)
         self.last_ai_seconds = time.monotonic() - started
-        return text
+        self.last_retried = False
+        return result.text
 
-    def _record_metrics(self, response, *, student_id: str, call_id: str,
-                        kind: str) -> None:
-        """Log what a turn cost, and bank it against the student's limits.
-
-        Deliberately narrow: counts, an id, and money. No transcript, no
-        message text, no name, no key — a log that carries the class content
-        would be a second copy of the student's data in a place nobody is
-        guarding.
-        """
-        # Wrapped whole: a student in the middle of a class must never lose it
-        # because the accounting hit something unexpected. Observability is
-        # worth having, never worth a failed turn.
+    def _record_metrics(self, result, *, student_id, call_id, kind):
+        # Accounting already happened at the AI boundary, including reports.
+        usage = result.usage
+        if usage is None:
+            print(json.dumps({"event": "usage_uncertain", "kind": kind,
+                              "call_id": call_id, "model": result.model}), file=sys.stderr)
+            return
         try:
-            usage = getattr(response, "usage", None)
-            cost = store.estimate_cost(usage)
-            store.record_usage(student_id, cost, turns=1)
-
-            def _n(attr):
-                return int(getattr(usage, attr, 0) or 0) if usage else 0
-
-            print(json.dumps({
-                "event": "turn",
-                "kind": kind,
-                "call_id": call_id,
-                "student_id": student_id,   # internal random id, not a name
-                "input_tokens": _n("input_tokens"),
-                "cache_read_tokens": _n("cache_read_input_tokens"),
-                "cache_write_tokens": _n("cache_creation_input_tokens"),
-                "output_tokens": _n("output_tokens"),
-                "cost_usd": round(cost, 6),
-                "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            }), file=sys.stderr)
-
-            spend = store.daily_spend()
-            if (store.DAILY_COST_CEILING_USD > 0
-                    and spend >= store.DAILY_COST_CEILING_USD * 0.8):
-                print(f"[juno] WARNING: today's spend is ${spend:.2f} of the "
-                      f"${store.DAILY_COST_CEILING_USD:.2f} ceiling",
-                      file=sys.stderr)
-        except Exception as e:  # noqa: BLE001
-            print(f"[juno] metrics failed (class unaffected): {e}", file=sys.stderr)
+            details = getattr(usage, "input_tokens_details", None)
+            entry = {"event": "turn", "kind": kind, "call_id": call_id,
+                     "student_id": student_id, "model": result.model,
+                     "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens,
+                     "cache_read_tokens": getattr(details, "cached_tokens", 0),
+                     "cache_write_tokens": getattr(details, "cache_write_tokens", 0),
+                     "cost_usd": store.estimate_cost(usage, result.model)}
+            print(json.dumps(entry), file=sys.stderr)
+        except (ValueError, TypeError, AttributeError):
+            print("[juno] usage uncertain; budget reservation retained", file=sys.stderr)
 
     def _handle_start(self, session: dict, data: dict) -> None:
         student = self._resolve_student(data)
@@ -3076,6 +2992,7 @@ class Handler(BaseHTTPRequestHandler):
         )
         store.record_call_started(student_id)
 
+        session["call_id"] = call_id
         reply = self._call_model(system_blocks, messages,
                                  student_id=student_id, call_id=call_id,
                                  kind="open")
@@ -3097,109 +3014,80 @@ class Handler(BaseHTTPRequestHandler):
         if not call_id:
             return None
         call = store.get_call(call_id)
-        return call if call and call["status"] == "open" else None
+        return call if (call and call["status"] == "open"
+                        and call["student_id"] == self._student_cookie()) else None
 
     def _handle_message(self, session: dict, data: dict) -> None:
-        # A retry of a request we already answered replays the stored answer
-        # instead of asking the model again: no duplicated turn in the
-        # transcript, and nothing billed twice.
-        key = (data.get("idempotency_key") or "").strip()[:80]
-        replayed = store.replayed_response(key) if key else None
-        if replayed is not None:
-            self._send_json(replayed)
-            return
-
-        turn_started = time.monotonic()
         call = self._current_call(session)
         if not call:
             self._send_json({"error": "No class in progress. Start one first."}, 400)
             return
-
-        text = (data.get("text") or "").strip()
-        if not text:
-            self._send_json({"error": "Empty message."}, 400)
+        student = self._resolve_student({})
+        if call["student_id"] != student["student_id"]:
+            self._send_json({"error": "No class in progress."}, 403)
             return
-        if len(text) > store.MAX_MESSAGE_CHARS:
-            self._send_json({"error": "That message is too long to send."}, 400)
+        text = str(data.get("text") or "").strip()
+        if not text or len(text) > store.MAX_MESSAGE_CHARS:
+            self._send_json({"error": "Empty message." if not text else "That message is too long to send."}, 400)
             return
-
-        try:
+        # Scope keys to the authenticated student and class; never replay a
+        # response belonging to another class. Old global keys are not used.
+        raw_key = str(data.get("idempotency_key") or "").strip()[:200]
+        if not raw_key:
+            raw_key = secrets.token_urlsafe(24)
+        key = hashlib.sha256((student["student_id"] + "|" + call["call_id"] + "|" + raw_key).encode()).hexdigest()
+        with store.call_guard(call["call_id"]):
+            replayed = store.replayed_response(key)
+            if replayed is not None:
+                self._send_json(replayed)
+                return
+            call = self._current_call(session)
+            if not call:
+                self._send_json({"error": "That class is closed."}, 409)
+                return
             store.check_can_send_turn(call)
-        except store.LimitReached as e:
-            self._send_json({"error": str(e)}, 429)
-            return
-
-        student_id = call["student_id"]
-        system_blocks = json.loads(call["system"])
-        # A Structured class runs its six parts to the end: never cut short.
-        wrap_up = bool(data.get("wrap_up")) and call["mode"] != "structured"
-        if wrap_up:
-            # For this turn only; the saved prompt is unchanged.
-            system_blocks = system_blocks + [{"type": "text", "text": tutor.WRAP_UP}]
-        messages = call["transcript"] + [{"role": "user", "content": text}]
-
-        if not STREAM_REPLIES:
-            before_ai = time.monotonic()
-            reply = self._call_model(system_blocks, messages,
-                                     student_id=student_id, call_id=call["call_id"],
-                                     kind="turn")
-            after_ai = time.monotonic()
-            messages.append({"role": "assistant", "content": reply})
-            turns = call["turns"] + 1
-            store.save_turn(call["call_id"], messages, turns)
-            log_timing("turn", database=(before_ai - turn_started) + (time.monotonic() - after_ai),
-                       ai=self.last_ai_seconds, total=time.monotonic() - turn_started,
-                       retried=self.last_retried)
-            payload = {
-                "reply": reply,
-                "turns": turns,
-                "turns_left": max(0, store.MAX_TURNS_PER_CALL - turns),
-                "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                "wrapped": wrap_up,
-            }
-            if key:
-                store.remember_response(key, call["call_id"], payload)
-            self._send_json(payload)
-            return
-
-        # From here on the response has already started (no Content-Length,
-        # the browser reads until the connection closes): nothing below may
-        # raise past this point without writing an event first, or the
-        # browser is left with a body that just stops, looking identical to
-        # a dropped connection rather than a clear error.
-        before_ai = time.monotonic()
-        self._start_stream_response()
-        try:
-            reply = self._call_model_streaming(
-                system_blocks, messages, student_id=student_id, call_id=call["call_id"],
-                kind="turn", on_delta=lambda sentence: self._write_stream_event(
-                    {"type": "delta", "text": sentence}),
-            )
-        except Exception as e:  # noqa: BLE001
-            print(f"[juno] turn failed mid-stream: {e!r}", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
-            self._write_stream_event({"type": "error", "error":
-                "Something went wrong on our side. Please try again — your class is saved."})
-            return
-        after_ai = time.monotonic()
-        messages.append({"role": "assistant", "content": reply})
-
-        turns = call["turns"] + 1
-        store.save_turn(call["call_id"], messages, turns)
-        log_timing("turn", database=(before_ai - turn_started) + (time.monotonic() - after_ai),
-                   ai=self.last_ai_seconds, total=time.monotonic() - turn_started,
-                   retried=self.last_retried)
-
-        payload = {
-            "reply": reply,
-            "turns": turns,
-            "turns_left": max(0, store.MAX_TURNS_PER_CALL - turns),
-            "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "wrapped": wrap_up,
-        }
-        if key:
-            store.remember_response(key, call["call_id"], payload)
-        self._write_stream_event(dict(payload, type="final"))
+            store.claim_turn(key, call["call_id"])
+            system_blocks = json.loads(call["system"])
+            wrap_up = bool(data.get("wrap_up")) and call["mode"] != "structured"
+            if wrap_up:
+                system_blocks += [{"type": "text", "text": tutor.WRAP_UP}]
+            messages = call["transcript"] + [{"role": "user", "content": text}]
+            started = time.monotonic()
+            if STREAM_REPLIES:
+                self._start_stream_response()
+            try:
+                if STREAM_REPLIES:
+                    reply = self._call_model_streaming(
+                        system_blocks, messages, student_id=call["student_id"], call_id=call["call_id"], kind="turn",
+                        on_delta=lambda sentence: self._write_stream_event({"type": "delta", "text": sentence}))
+                else:
+                    reply = self._call_model(system_blocks, messages, student_id=call["student_id"],
+                                             call_id=call["call_id"], kind="turn")
+                messages.append({"role": "assistant", "content": reply})
+                turns = call["turns"] + 1
+                payload = {"reply": reply, "turns": turns,
+                           "turns_left": max(0, store.MAX_TURNS_PER_CALL - turns),
+                           "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "wrapped": wrap_up}
+                store.commit_turn(call["call_id"], messages, turns, key, payload)
+                log_timing("turn", database=max(0, time.monotonic() - started - self.last_ai_seconds),
+                           ai=self.last_ai_seconds, total=time.monotonic() - started, retried=False)
+            except Exception as error:
+                if isinstance(error, store.LimitReached):
+                    store.release_unbilled_turn(key)
+                if not STREAM_REPLIES:
+                    raise
+                # Never restart a partial stream. Keep the uncertain attempt
+                # and budget reservation; the last complete exchange is safe.
+                print(f"[juno] streamed turn failed: {type(error).__name__}", file=sys.stderr)
+                try:
+                    self._write_stream_event({"type": "error", "error": "Juno could not finish the reply — your last complete exchange is saved. Resume the class before trying again."})
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                return
+            if STREAM_REPLIES:
+                self._write_stream_event(dict(payload, type="final"))
+            else:
+                self._send_json(payload)
 
     def _handle_resume(self, session: dict, data: dict) -> None:
         """Hand back an unfinished class so it can be picked up again.
@@ -3336,31 +3224,16 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(progress_payload(student, tz_offset))
 
     def _handle_end(self, session: dict, data: dict) -> None:
-        # Accept an explicit call_id so a class can be closed and reported on
-        # later, from a different tab, without ever having pressed End call.
-        call_id = (data.get("call_id") or "").strip() or session.get("call_id")
+        call_id = str(data.get("call_id") or "").strip() or session.get("call_id")
         call = store.get_call(call_id) if call_id else None
-        if not call:
-            self._send_json({"error": "No class to finish."}, 400)
+        student = self._resolve_student(data)
+        if not call or call["student_id"] != student["student_id"]:
+            self._send_json({"error": "No class to finish."}, 404)
             return
-        if call["status"] != "open":
-            if call.get("report"):
-                self._send_json({"report": call["report"]})
-                return
+        if call["status"] != "open" and not call.get("report"):
             self._send_json({"error": "That class is already closed."}, 400)
             return
-
-        # The report is its own request, with its own tools and no cache
-        # marker - as it always was.
-        report = tutor.generate_report(client, call["transcript"])
-
-        memory = tutor.load_student(call["student_id"])
-        memory = tutor.apply_report_to_student(
-            memory, report, call["mode"],
-            {"id": call["scenario_id"]} if call["scenario_id"] else None,
-        )
-        tutor.save_student(memory)
-        store.finish_call(call["call_id"], report)
+        report = finish_report(call_id)
         session["call_id"] = None
         self._send_json({"report": report})
 
@@ -3467,7 +3340,7 @@ class Handler(BaseHTTPRequestHandler):
             for call in store.open_calls_for(student_id):
                 fold_unfinished_class(call)
         except Exception as e:  # noqa: BLE001
-            print(f"[juno] could not close an old class (new class unaffected): {e!r}",
+            print(f"[juno] could not close an old class (new class unaffected): {type(e).__name__}",
                   file=sys.stderr, flush=True)
 
     def _handle_help(self, session: dict, data: dict) -> None:
@@ -3501,20 +3374,23 @@ class Handler(BaseHTTPRequestHandler):
             for m in recent
         )
 
-        response = client.beta.messages.create(
-            model=tutor.TURN_MODEL,
-            max_tokens=2000,
-            system=HELP_SYSTEM.format(level=call["level"]),
-            messages=[{"role": "user",
-                       "content": f"The class so far, most recent last:\n\n{lines}"}],
-            output_config={"effort": "low"},
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-        )
+        try:
+            response = client.complete(
+                model=tutor.TURN_MODEL,
+                max_output_tokens=2000,
+                system=HELP_SYSTEM.format(level=call["level"]),
+                messages=[{"role": "user",
+                           "content": f"The class so far, most recent last:\n\n{lines}"}],
+                effort=tutor.TURN_EFFORT, student_id=call["student_id"], call_id=call["call_id"],
+                kind="help" if self.path == "/api/help" else "define",
+            )
+        except ai.Refusal:
+            self._send_json({"help": "Ahora mismo no puedo ayudarte con esto. Intenta responder con una frase sencilla.", "explanation": "Intenta responder con una frase sencilla.", "answers": []})
+            return
         self._record_metrics(response, student_id=call["student_id"],
                              call_id=call["call_id"], kind="help")
-        text = next((b.text for b in response.content if b.type == "text"), "").strip()
-        if response.stop_reason == "refusal" or not text:
+        text = response.text
+        if not text:
             text = ("Ahora mismo no puedo ayudarte con esto. "
                     "Intenta responder con una frase sencilla.")
         session["help_used"][call["call_id"]] = used + 1
@@ -3556,21 +3432,24 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"error": "Has consultado muchas palabras hoy. "
                                       "Pregúntale a Juno: What does it mean?"}, 429)
             return
-        response = client.beta.messages.create(
-            model=tutor.TURN_MODEL,
-            max_tokens=1000,
-            system=DEFINE_SYSTEM,
-            messages=[{"role": "user", "content": f"Sentence: {sentence}\nWord tapped: {word}"}],
-            output_config={"effort": "low"},
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-        )
+        try:
+            response = client.complete(
+                model=tutor.TURN_MODEL,
+                max_output_tokens=1000,
+                system=DEFINE_SYSTEM,
+                messages=[{"role": "user", "content": f"Sentence: {sentence}\nWord tapped: {word}"}],
+                effort=tutor.TURN_EFFORT, student_id=call["student_id"], call_id=call["call_id"],
+                kind="help" if self.path == "/api/help" else "define",
+            )
+        except ai.Refusal:
+            self._send_json({"error": "Ahora mismo no puedo explicar esta palabra."}, 502)
+            return
         self._record_metrics(response, student_id=call["student_id"],
                              call_id=call["call_id"], kind="define")
         counts[today] = counts.get(today, 0) + 1
-        text = next((b.text for b in response.content if b.type == "text"), "").strip()
+        text = response.text
         lines = [line.strip() for line in text.splitlines() if line.strip()]
-        if response.stop_reason == "refusal" or not lines:
+        if not lines:
             self._send_json({"error": "Ahora mismo no puedo explicar esta palabra."}, 502)
             return
         result = {"word": word, "meaning": lines[0], "example": lines[1] if len(lines) > 1 else ""}
@@ -3582,7 +3461,8 @@ class Handler(BaseHTTPRequestHandler):
     def _handle_abandon(self, session: dict, data: dict) -> None:
         call = self._current_call(session)
         if call:
-            store.abandon_call(call["call_id"])
+            with store.call_guard(call["call_id"]):
+                store.abandon_call(call["call_id"])
         session["call_id"] = None
         self._send_json({"ok": True})
 
@@ -3615,8 +3495,8 @@ class _AuthError(Exception):
 
 def main() -> None:
     sys.stdout.reconfigure(line_buffering=True)
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        sys.exit("Set ANTHROPIC_API_KEY first, same as with tutor.py.")
+    if not os.environ.get("OPENAI_API_KEY"):
+        sys.exit("Set OPENAI_API_KEY first, same as with tutor.py.")
     if RUNNING_DEPLOYED and not ACCESS_PASSPHRASE:
         sys.exit(
             "Running with PORT set (looks like a real deployment) but "

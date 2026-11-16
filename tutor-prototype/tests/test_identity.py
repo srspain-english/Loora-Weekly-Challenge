@@ -32,7 +32,7 @@ class IdentityTest(ServerTestCase, unittest.TestCase):
 
     def _start(self, opener, **body):
         with mock.patch.object(
-            web.client.messages, "create", return_value=fake_reply()
+            web.client.responses, "create", return_value=fake_reply()
         ):
             return self.post("/api/start", {"mode": "free", **body}, opener)
 
