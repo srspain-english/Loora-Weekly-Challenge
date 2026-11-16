@@ -21,6 +21,7 @@ import argparse
 import json
 import os
 import random
+import re
 import sys
 import textwrap
 from datetime import datetime, timezone
@@ -48,6 +49,39 @@ def turn_thinking(model: str) -> dict | None:
     if model.startswith(("claude-opus-5-5", "claude-fable", "claude-mythos")):
         return None                            # these cannot switch it off
     return {"type": "disabled"}
+
+
+# A sentence-ending punctuation mark, as long as it is NOT immediately
+# followed by another non-space character (which usually means it's a decimal
+# point in a number, or something unfinished the model is still writing) and
+# there is at least one more character already in the buffer after it (which
+# is what actually confirms the sentence closed - a "." at the very end of
+# what has arrived so far might still turn out to be "Mr." once more text
+# streams in, so that case is deliberately left for the next chunk, or for
+# the final flush once the model has finished).
+_SENTENCE_END = re.compile(r'[.!?](?=["\')\]]*(?:\s|$))')
+
+
+def split_ready_sentences(buffer: str) -> tuple[list[str], str]:
+    """Pull out the sentences in `buffer` that are safe to speak right now.
+
+    Used to speak Juno's reply as it streams in rather than waiting for all
+    of it - most of what used to be "Juno is thinking..." was really "Juno
+    is thinking AND THEN writing AND THEN only starting to speak once every
+    word existed". Returns (finished_sentences, the_rest_still_being_written).
+    """
+    sentences = []
+    start = 0
+    for match in _SENTENCE_END.finditer(buffer):
+        end = match.end()
+        if end < len(buffer):          # confirmed closed - something follows it
+            sentence = buffer[start:end].strip()
+            if sentence:
+                sentences.append(sentence)
+            start = end
+    return sentences, buffer[start:]
+
+
 BASE_DIR = Path(__file__).resolve().parent
 SCENARIOS_PATH = BASE_DIR / "scenarios.json"
 # Everything a student builds up over time lives here. Point it at a

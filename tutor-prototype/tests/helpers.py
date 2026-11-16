@@ -48,6 +48,33 @@ def fake_reply(text: str = "Hello there.", *, cache_read: int = 0,
     return response
 
 
+def _fake_stream(*, model, max_tokens, system, messages, cache_control=None, **extra):
+    """Bridge so tests that mock `.create` also cover the streaming turn path.
+
+    Production code now calls `client.messages.stream(...)` for a turn, but
+    every existing test mocks `client.messages.create`. Rather than touch
+    every call site, this stands in for `.stream`, looks up whatever
+    `.create` currently resolves to (real or test-patched) and calls it with
+    the same arguments, then wraps the reply as a one-chunk stream. Patched
+    in once by `ServerTestCase`, so each test's own `.create` mock keeps
+    working unchanged.
+    """
+    kwargs = dict(model=model, max_tokens=max_tokens, system=system, messages=messages, **extra)
+    if cache_control is not None:
+        kwargs["cache_control"] = cache_control
+    response = web.client.messages.create(**kwargs)
+
+    text = next((b.text for b in response.content if b.type == "text"), "")
+    stream = mock.Mock()
+    stream.text_stream = iter([text])
+    stream.get_final_message = mock.Mock(return_value=response)
+
+    manager = mock.MagicMock()
+    manager.__enter__ = mock.Mock(return_value=stream)
+    manager.__exit__ = mock.Mock(return_value=False)
+    return manager
+
+
 def fake_report_response(report: dict | None = None):
     """A stand-in for the end-of-call report tool call."""
     block = mock.Mock()
@@ -91,8 +118,12 @@ class ServerTestCase:
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
 
+        cls._stream_patch = mock.patch.object(web.client.messages, "stream", side_effect=_fake_stream)
+        cls._stream_patch.start()
+
     @classmethod
     def tearDownClass(cls) -> None:
+        cls._stream_patch.stop()
         cls.server.shutdown()
         cls.server.server_close()
         tutor.STUDENTS_DIR = cls._orig_students_dir
@@ -115,9 +146,20 @@ class ServerTestCase:
         )
         try:
             with opener.open(req) as resp:
-                return resp.status, json.loads(resp.read())
+                return resp.status, self._parse_body(resp.read())
         except urllib.error.HTTPError as e:
-            return e.code, json.loads(e.read())
+            return e.code, self._parse_body(e.read())
+
+    @staticmethod
+    def _parse_body(raw: bytes):
+        """A reply is one JSON object, or (for a streamed turn) a line of
+        JSON per event. Tests only care about the end state, so fold a
+        stream down to its last event (the "final" or "error" one) and
+        hand back the same shape a one-shot reply always had."""
+        lines = [ln for ln in raw.decode("utf-8").splitlines() if ln.strip()]
+        if len(lines) <= 1:
+            return json.loads(raw)
+        return json.loads(lines[-1])
 
     def auth(self, opener=None):
         status, _ = self.post("/api/auth", {"passphrase": ""}, opener)

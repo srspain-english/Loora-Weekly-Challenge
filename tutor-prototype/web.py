@@ -54,6 +54,11 @@ RUNNING_DEPLOYED = bool(os.environ.get("PORT"))
 HOST = "0.0.0.0" if RUNNING_DEPLOYED else "127.0.0.1"
 PORT = int(os.environ.get("PORT", 8765))
 ACCESS_PASSPHRASE = os.environ.get("JUNO_ACCESS_PASSPHRASE", "")
+# Speaking Juno's reply sentence-by-sentence as it streams in, instead of
+# waiting for the whole thing - this is most of what actually shortens "Juno
+# is thinking...". JUNO_STREAM_REPLIES=off reverts to the old one-shot
+# request with no code change, in case streaming ever misbehaves on a host.
+STREAM_REPLIES = os.environ.get("JUNO_STREAM_REPLIES", "on").strip().lower() != "off"
 MAX_FEEDBACK_LENGTH = 2000
 # The teacher's private page for personal codes. Switched off unless set.
 ADMIN_CODE = os.environ.get("JUNO_ADMIN_CODE", "")
@@ -731,6 +736,72 @@ async function api(path, body, opts) {
   return data;
 }
 
+// Like `api()`, but for the one endpoint whose reply can arrive as a stream:
+// a JSON object per line instead of one object once everything is written.
+// A validation error or an idempotency replay still comes back as a single
+// plain JSON object, so both shapes are handled here.
+async function streamMessage(path, body, opts) {
+  const onWaking = (opts || {}).onWaking;
+  const onDelta = (opts || {}).onDelta;
+  const timer = onWaking ? setTimeout(onWaking, WAKING_AFTER_MS) : null;
+  let res;
+  try {
+    res = await fetch(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body || {}),
+      credentials: 'same-origin',
+    });
+  } catch (e) {
+    throw new ApiError(
+      navigator.onLine === false
+        ? 'You appear to be offline. Your class is saved — reconnect and continue.'
+        : "Couldn't reach Juno. Check your connection and try again — your class is saved.",
+      'network');
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+
+  const streamed = (res.headers.get('content-type') || '').includes('ndjson');
+  if (!streamed) {
+    let data;
+    try { data = await res.json(); } catch (e) {
+      throw new ApiError('Juno sent something unexpected. Please try again.', 'server');
+    }
+    if (!res.ok) {
+      throw new ApiError(data.error || 'Something went wrong.',
+                         res.status === 429 ? 'limit' : 'server');
+    }
+    return data;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let final = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buffer.indexOf('\\n')) !== -1) {
+      const line = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 1);
+      if (!line.trim()) continue;
+      const event = JSON.parse(line);
+      if (event.type === 'delta') {
+        if (onDelta) onDelta(event.text);
+      } else if (event.type === 'error') {
+        throw new ApiError(event.error || 'Something went wrong.', 'server');
+      } else if (event.type === 'final') {
+        final = event;
+      }
+    }
+  }
+  if (!final) throw new ApiError('Juno sent something unexpected. Please try again.', 'server');
+  return final;
+}
+
 function setStatus(el, text, kind) {
   const box = $(el), label = $(el + '-text');
   if (!box || !label) return;
@@ -1074,9 +1145,16 @@ function endAfterGoodbye() {
   if (classInProgress && !$('end-btn').disabled) $('end-btn').onclick();
 }
 
-function speak(text) {
-  if (!$('speak-toggle').checked || !window.speechSynthesis || paused) return false;
-  window.speechSynthesis.cancel();
+// Shared by a one-shot `speak()` and the streaming queue below: once Juno is
+// done talking, settle the orb and either close the call or listen again.
+function afterSpeaking() {
+  if (micBusy || sending) return;
+  idleOrb();
+  if (endAfterSpeaking) { endAfterGoodbye(); return; }
+  autoListen();
+}
+
+function makeUtterance(text) {
   const u = new SpeechSynthesisUtterance(speakable(text));
   u.lang = 'en-US';
   u.rate = VOICE_RATES[$('voice-speed').value] || VOICE_RATES.normal;
@@ -1084,14 +1162,48 @@ function speak(text) {
   const voice = pickVoice(cachedVoices.length ? cachedVoices : window.speechSynthesis.getVoices());
   if (voice) u.voice = voice;
   u.onstart = () => { if (!paused && !micBusy) setOrb('speaking', 'Juno is speaking'); };
-  u.onend = u.onerror = () => {
-    if (micBusy || sending) return;
-    idleOrb();
-    if (endAfterSpeaking) { endAfterGoodbye(); return; }
-    autoListen();
-  };
+  return u;
+}
+
+function speak(text) {
+  if (!$('speak-toggle').checked || !window.speechSynthesis || paused) return false;
+  window.speechSynthesis.cancel();
+  const u = makeUtterance(text);
+  u.onend = u.onerror = afterSpeaking;
   window.speechSynthesis.speak(u);
   return true;
+}
+
+// Speaks a reply sentence by sentence as it streams in, without cancelling
+// anything already queued - unlike `speak()`, which always starts clean.
+// `onDone` fires once everything that will ever be pushed has finished (or
+// was dropped because speech got turned off or paused mid-reply).
+function makeSpeechQueue(onDone) {
+  const queue = [];
+  let speaking = false;
+  let finished = false;
+
+  function pump() {
+    if (speaking) return;
+    if (!$('speak-toggle').checked || !window.speechSynthesis || paused) {
+      queue.length = 0;
+      if (finished) onDone();
+      return;
+    }
+    if (!queue.length) {
+      if (finished) onDone();
+      return;
+    }
+    const u = makeUtterance(queue.shift());
+    speaking = true;
+    u.onend = u.onerror = () => { speaking = false; pump(); };
+    window.speechSynthesis.speak(u);
+  }
+
+  return {
+    push(text) { queue.push(text); pump(); },
+    finish() { finished = true; pump(); },
+  };
 }
 $('speak-toggle').onchange = () => {
   if (!$('speak-toggle').checked && window.speechSynthesis) window.speechSynthesis.cancel();
@@ -1711,21 +1823,40 @@ async function sendMessage() {
   $('help-btn').disabled = true;
   $('chat-error').textContent = '';
   setOrb('thinking', 'Juno is thinking…');
+
+  // Speaking as Juno's reply streams in, rather than waiting for all of it,
+  // is most of what makes the wait feel shorter. The queue only engages
+  // when there's actually something to speak with.
+  const speechOn = !!($('speak-toggle').checked && window.speechSynthesis && !paused);
+  const queue = speechOn ? makeSpeechQueue(afterSpeaking) : null;
+  let shown = '';
+
   try {
     const wrapUp = classLimitMs > 0 && elapsedMs() >= classLimitMs && !wrapUpSent;
-    const data = await api('/api/message', { text, idempotency_key: key, wrap_up: wrapUp },
-      { onWaking: () => setStatus('chat-status',
-          'Juno is waking up — one moment.', 'waking') });
+    const data = await streamMessage('/api/message', { text, idempotency_key: key, wrap_up: wrapUp }, {
+      onWaking: () => setStatus('chat-status', 'Juno is waking up — one moment.', 'waking'),
+      onDelta: (sentence) => {
+        shown = shown ? `${shown} ${sentence}` : sentence;
+        setJunoLine(shown, false);
+        if (queue) queue.push(sentence);
+      },
+    });
     bubble('juno', data.reply);
     showSaved(data.saved_at);
     sending = false;
-    idleOrb();
-    if (data.wrapped) {
-      // Juno has said goodbye: once it finishes speaking, the notes open.
-      wrapUpSent = true;
-      endAfterSpeaking = true;
-      if (!speak(data.reply)) setTimeout(endAfterGoodbye, 4000);
-    } else if (!speak(data.reply)) autoListen();
+    if (queue) {
+      if (data.wrapped) { wrapUpSent = true; endAfterSpeaking = true; }
+      queue.finish();
+    } else {
+      idleOrb();
+      if (data.wrapped) {
+        wrapUpSent = true;
+        endAfterSpeaking = true;
+        setTimeout(endAfterGoodbye, 4000);
+      } else {
+        autoListen();
+      }
+    }
     if (data.turns_left !== undefined && data.turns_left <= 5) {
       $('chat-error').textContent =
         `${data.turns_left} messages left in this class — press End when you're ready for your report.`;
@@ -2613,6 +2744,22 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _start_stream_response(self) -> None:
+        """Headers for a reply sent as a sequence of lines, one JSON object
+        each, instead of one object at the end - no Content-Length, since we
+        don't know the total length yet; the browser reads until the
+        connection closes, same as it would for chunked transfer."""
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.send_header("Cache-Control", "no-store")
+        for cookie in self._cookie_headers():
+            self.send_header("Set-Cookie", cookie)
+        self.end_headers()
+
+    def _write_stream_event(self, obj) -> None:
+        self.wfile.write((json.dumps(obj) + "\n").encode("utf-8"))
+        self.wfile.flush()
+
     def do_GET(self) -> None:
         self._load_session()
         if self.path in ("/", "/index.html"):
@@ -2728,6 +2875,34 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "Wrong passphrase."}, 401)
 
+    def _ask_once(self, model: str, fast: bool, system_blocks, flat: str, messages):
+        """One non-streaming request to the model, with the cache-shape retry.
+
+        Shared by `_call_model` (every turn, until the fast model declines)
+        and `_call_model_streaming`'s own fallback (the full model, once that
+        happens) - same request, so it's written once.
+        """
+        # Low effort, and for the fast model no separate thinking step: a
+        # conversational reply needs speed far more than deep reasoning, and
+        # the student is waiting in silence.
+        extra = {"output_config": {"effort": "low"}}
+        thinking = tutor.turn_thinking(model) if fast else None
+        if thinking:
+            extra["thinking"] = thinking
+        try:
+            return client.messages.create(
+                model=model, max_tokens=2048,
+                system=system_blocks, messages=messages,
+                cache_control={"type": "ephemeral"}, **extra,
+            )
+        except anthropic.BadRequestError as e:
+            print(f"[juno] cache-shape rejected, retrying uncached: {e}",
+                  file=sys.stderr)
+            return client.messages.create(
+                model=model, max_tokens=2048,
+                system=flat, messages=messages, **extra,
+            )
+
     def _call_model(self, system_blocks, messages, *, student_id, call_id,
                     kind: str) -> str:
         """One turn against the model: cached if possible, billed either way.
@@ -2736,47 +2911,89 @@ class Handler(BaseHTTPRequestHandler):
         cached shape — an unsupported block layout, a prefix under the model's
         minimum, a change on their side — the class carries on uncached rather
         than failing in front of a student. That fallback is the whole reason
-        this is one function instead of an inline call.
+        `_ask_once` exists instead of an inline call.
         """
         flat = "\n".join(b["text"] for b in system_blocks)
-
-        def ask(model: str, fast: bool):
-            # Low effort, and for the fast model no separate thinking step: a
-            # conversational reply needs speed far more than deep reasoning,
-            # and the student is waiting in silence.
-            extra = {"output_config": {"effort": "low"}}
-            thinking = tutor.turn_thinking(model) if fast else None
-            if thinking:
-                extra["thinking"] = thinking
-            try:
-                return client.messages.create(
-                    model=model, max_tokens=2048,
-                    system=system_blocks, messages=messages,
-                    cache_control={"type": "ephemeral"}, **extra,
-                )
-            except anthropic.BadRequestError as e:
-                print(f"[juno] cache-shape rejected, retrying uncached: {e}",
-                      file=sys.stderr)
-                return client.messages.create(
-                    model=model, max_tokens=2048,
-                    system=flat, messages=messages, **extra,
-                )
-
         started = time.monotonic()
-        response = ask(tutor.TURN_MODEL, fast=True)
+        response = self._ask_once(tutor.TURN_MODEL, True, system_blocks, flat, messages)
         self._record_metrics(response, student_id=student_id, call_id=call_id,
                              kind=kind)
         text = next((b.text for b in response.content if b.type == "text"), "")
         if response.stop_reason == "refusal" or not text.strip():
             # The fast model declined or said nothing: ask the full model once
             # rather than leave the student facing silence.
-            response = ask(tutor.MODEL, fast=False)
+            response = self._ask_once(tutor.MODEL, False, system_blocks, flat, messages)
             self._record_metrics(response, student_id=student_id, call_id=call_id,
                                  kind=kind)
             text = next((b.text for b in response.content if b.type == "text"),
                         "Sorry, could you say that again?")
             self.last_retried = True
         else:
+            self.last_retried = False
+        self.last_ai_seconds = time.monotonic() - started
+        return text
+
+    def _call_model_streaming(self, system_blocks, messages, *, student_id, call_id,
+                              kind: str, on_delta) -> str:
+        """Like `_call_model`, but calls `on_delta(sentence)` as each sentence
+        of the reply is finished, instead of waiting for the whole thing.
+
+        This is most of what actually shortens "Juno is thinking..." - the
+        turn used to wait for every word before speaking any of it. Falls
+        back to `_call_model`'s own (non-streaming) full-model retry if the
+        fast model declines or says nothing, exactly as `_call_model` does -
+        that path is rare, and a refusal carries no text to have spoken
+        early anyway, so simplicity wins over streaming it too.
+        """
+        flat = "\n".join(b["text"] for b in system_blocks)
+        extra = {"output_config": {"effort": "low"}}
+        thinking = tutor.turn_thinking(tutor.TURN_MODEL)
+        if thinking:
+            extra["thinking"] = thinking
+        buffer = ""
+
+        def consume(stream) -> None:
+            nonlocal buffer
+            for piece in stream.text_stream:
+                buffer += piece
+                ready, buffer = tutor.split_ready_sentences(buffer)
+                for sentence in ready:
+                    on_delta(sentence)
+
+        started = time.monotonic()
+        try:
+            with client.messages.stream(
+                model=tutor.TURN_MODEL, max_tokens=2048,
+                system=system_blocks, messages=messages,
+                cache_control={"type": "ephemeral"}, **extra,
+            ) as stream:
+                consume(stream)
+                final = stream.get_final_message()
+        except anthropic.BadRequestError as e:
+            print(f"[juno] cache-shape rejected, retrying uncached: {e}",
+                  file=sys.stderr)
+            buffer = ""
+            with client.messages.stream(
+                model=tutor.TURN_MODEL, max_tokens=2048,
+                system=flat, messages=messages, **extra,
+            ) as stream:
+                consume(stream)
+                final = stream.get_final_message()
+
+        self._record_metrics(final, student_id=student_id, call_id=call_id,
+                             kind=kind)
+        text = next((b.text for b in final.content if b.type == "text"), "")
+        if final.stop_reason == "refusal" or not text.strip():
+            response = self._ask_once(tutor.MODEL, False, system_blocks, flat, messages)
+            self._record_metrics(response, student_id=student_id, call_id=call_id,
+                                 kind=kind)
+            text = next((b.text for b in response.content if b.type == "text"),
+                        "Sorry, could you say that again?")
+            on_delta(text)
+            self.last_retried = True
+        else:
+            if buffer.strip():
+                on_delta(buffer.strip())
             self.last_retried = False
         self.last_ai_seconds = time.monotonic() - started
         return text
@@ -2921,10 +3138,49 @@ class Handler(BaseHTTPRequestHandler):
             system_blocks = system_blocks + [{"type": "text", "text": tutor.WRAP_UP}]
         messages = call["transcript"] + [{"role": "user", "content": text}]
 
+        if not STREAM_REPLIES:
+            before_ai = time.monotonic()
+            reply = self._call_model(system_blocks, messages,
+                                     student_id=student_id, call_id=call["call_id"],
+                                     kind="turn")
+            after_ai = time.monotonic()
+            messages.append({"role": "assistant", "content": reply})
+            turns = call["turns"] + 1
+            store.save_turn(call["call_id"], messages, turns)
+            log_timing("turn", database=(before_ai - turn_started) + (time.monotonic() - after_ai),
+                       ai=self.last_ai_seconds, total=time.monotonic() - turn_started,
+                       retried=self.last_retried)
+            payload = {
+                "reply": reply,
+                "turns": turns,
+                "turns_left": max(0, store.MAX_TURNS_PER_CALL - turns),
+                "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "wrapped": wrap_up,
+            }
+            if key:
+                store.remember_response(key, call["call_id"], payload)
+            self._send_json(payload)
+            return
+
+        # From here on the response has already started (no Content-Length,
+        # the browser reads until the connection closes): nothing below may
+        # raise past this point without writing an event first, or the
+        # browser is left with a body that just stops, looking identical to
+        # a dropped connection rather than a clear error.
         before_ai = time.monotonic()
-        reply = self._call_model(system_blocks, messages,
-                                 student_id=student_id, call_id=call["call_id"],
-                                 kind="turn")
+        self._start_stream_response()
+        try:
+            reply = self._call_model_streaming(
+                system_blocks, messages, student_id=student_id, call_id=call["call_id"],
+                kind="turn", on_delta=lambda sentence: self._write_stream_event(
+                    {"type": "delta", "text": sentence}),
+            )
+        except Exception as e:  # noqa: BLE001
+            print(f"[juno] turn failed mid-stream: {e!r}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            self._write_stream_event({"type": "error", "error":
+                "Something went wrong on our side. Please try again — your class is saved."})
+            return
         after_ai = time.monotonic()
         messages.append({"role": "assistant", "content": reply})
 
@@ -2943,7 +3199,7 @@ class Handler(BaseHTTPRequestHandler):
         }
         if key:
             store.remember_response(key, call["call_id"], payload)
-        self._send_json(payload)
+        self._write_stream_event(dict(payload, type="final"))
 
     def _handle_resume(self, session: dict, data: dict) -> None:
         """Hand back an unfinished class so it can be picked up again.

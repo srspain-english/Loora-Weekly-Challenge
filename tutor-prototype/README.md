@@ -262,6 +262,27 @@ From a student's feedback after a week of use:
   The clock counts down; the first answer after time is up gets a short
   goodbye from Juno, and the notes open by themselves.
 
+### Speaking as Juno writes, not after
+
+The biggest remaining gap with a fluid, real-time voice app: Juno used to
+write out its whole reply before saying any of it, so "Juno is thinking…"
+really meant "thinking, then writing, then finally speaking." Now the server
+sends the reply as it's written, one finished sentence at a time
+(`/api/message`, a line of JSON per sentence instead of one object at the
+end), and the browser speaks each sentence as it arrives and shows the
+growing line live — so the first words are heard roughly as soon as the
+model has written its first sentence, not once it's written all of them.
+- `tutor.split_ready_sentences` decides what's safe to speak: a sentence
+  isn't "ready" until something follows its closing punctuation, so "Mr." or
+  "3.5" aren't cut short mid-stream.
+- `JUNO_STREAM_REPLIES=off` reverts to one request and one reply with no code
+  change, if streaming ever misbehaves on a host.
+- Spoken sentences queue up and play back-to-back without cutting each other
+  off; turning off "Juno speaks" or pausing mid-reply drops whatever hasn't
+  played yet.
+- This doesn't touch the opening line, Help me, or word lookups — only the
+  back-and-forth of a class.
+
 ### Tap a word, hear the answer
 
 Asked for by students in class. Every word Juno says (the big line and the

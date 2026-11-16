@@ -21,19 +21,17 @@ No network: the Anthropic client is mocked, so this runs with no API key.
 
 from __future__ import annotations
 
-import json
 import sys
-import threading
 import unittest
-import urllib.request
-from http.cookiejar import CookieJar
 from pathlib import Path
 from unittest import mock
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import tutor  # noqa: E402
 import web  # noqa: E402
+from helpers import ServerTestCase  # noqa: E402
 
 # Opus 5 will not create a cache entry for a prefix shorter than this, and
 # says nothing when it declines. Other models in the same family sit as high
@@ -124,37 +122,16 @@ class CacheableSystemTest(unittest.TestCase):
                 )
 
 
-class CallLoopSendsCacheMarkersTest(unittest.TestCase):
+class CallLoopSendsCacheMarkersTest(ServerTestCase, unittest.TestCase):
     """The requests the server actually builds, start and message alike."""
 
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.server = web.ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
-        cls.base_url = f"http://127.0.0.1:{cls.server.server_address[1]}"
-        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
-        cls.thread.start()
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls.server.shutdown()
-        cls.server.server_close()
-
     def setUp(self) -> None:
-        self.opener = urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(CookieJar())
-        )
+        self.opener = self.new_browser()
         web.ACCESS_PASSPHRASE = ""
         web.SESSIONS.clear()
 
     def _post(self, path: str, body: dict):
-        req = urllib.request.Request(
-            f"{self.base_url}{path}",
-            data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with self.opener.open(req) as resp:
-            return json.loads(resp.read())
+        return self.post(path, body)[1]
 
     def _assert_cached(self, kwargs: dict) -> None:
         system = kwargs["system"]
