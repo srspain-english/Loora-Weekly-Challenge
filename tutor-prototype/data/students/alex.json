@@ -1,0 +1,18 @@
+{
+  "student_id": "alex",
+  "name": "Alex",
+  "cefr_level": "B1+",
+  "sector_context": "Logistics",
+  "recurring_error_patterns": [
+    "past simple vs. present perfect"
+  ],
+  "target_vocab_queue": [
+    "meeting vocabulary"
+  ],
+  "vocab_acquired_log": [
+    "lead time — the amount of time between starting and finishing a process"
+  ],
+  "grammar_covered": [],
+  "next_recommendation": "Put \"lead time\" into a real sentence early next call.",
+  "session_history": []
+}
