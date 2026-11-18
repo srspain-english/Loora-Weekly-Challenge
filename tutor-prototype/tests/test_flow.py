@@ -168,11 +168,19 @@ class NoThinkingStepTest(ServerTestCase, unittest.TestCase):
 class SmarterWaitTest(unittest.TestCase):
     """About 4 of the 7 seconds a student measured were Juno waiting on purpose."""
 
-    def test_a_finished_sentence_goes_sooner_on_normal(self) -> None:
+    def test_a_finished_sentence_goes_sooner_only_on_quick(self) -> None:
         html = web.INDEX_HTML
         self.assertIn("const QUICK_MS = 1500;", html)
-        self.assertIn("if (setting === 'normal' && lastFinal && soundsFinished(heard)) return QUICK_MS;", html)
+        self.assertIn("if (setting === 'quick' && lastFinal && soundsFinished(heard)) return QUICK_MS;", html)
         self.assertIn("lastFinal = !!(latest && latest.isFinal);", html)
+
+    def test_the_default_waits_a_full_four_seconds(self) -> None:
+        # A student said something complete, stopped to think of more, and
+        # was answered mid-thought: the default must not shortcut the wait.
+        html = web.INDEX_HTML
+        self.assertIn('<option value="normal" selected>4 seconds</option>', html)
+        self.assertIn("normal: SILENCE_MS", html)
+        self.assertNotIn("setting === 'normal' && lastFinal", html)
 
     def test_a_sentence_left_hanging_still_gets_the_full_wait(self) -> None:
         html = web.INDEX_HTML
@@ -181,8 +189,21 @@ class SmarterWaitTest(unittest.TestCase):
 
     def test_students_who_need_time_keep_their_choices(self) -> None:
         html = web.INDEX_HTML
-        self.assertIn('<option value="normal">Normal</option>', html)
+        self.assertIn('<option value="quick">Quick</option>', html)
         self.assertIn("long: 8000, tap: Infinity", html)
+
+
+class FreeTalkDepthTest(unittest.TestCase):
+    """A teacher's "ask me five questions" prompt turned Free talk into a quiz."""
+
+    def test_free_talk_develops_each_answer(self) -> None:
+        context = tutor.dynamic_context("B1", "free", None, STUDENT)
+        self.assertIn("KEEP IT A CONVERSATION, NOT A QUIZ", context)
+        self.assertIn("follow-up questions", context)
+
+    def test_the_structured_class_keeps_its_quick_fire_part(self) -> None:
+        context = tutor.dynamic_context("B1", "structured", None, STUDENT)
+        self.assertNotIn("NOT A QUIZ", context)
 
 
 class LibraryVersionTest(unittest.TestCase):

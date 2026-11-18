@@ -323,6 +323,20 @@ WRAP_UP = (
 )
 
 
+# A student pasted her teacher's prompt ("ask me five questions about...") into
+# Free talk and got a quiz: a short "I agree", then the next question.
+FREE_TALK_DEPTH = (
+    "\nKEEP IT A CONVERSATION, NOT A QUIZ. If the student gives you a task or a list - "
+    "for example \"ask me five questions about travel\" - each item is a topic to talk "
+    "about, not a box to tick. After each answer: react to what they actually said, add "
+    "a short thought or experience of your own, and ask one or two follow-up questions "
+    "that build on their answer (why, an example, what happened next, how they felt). "
+    "Move to the next item only after that, or when they clearly have nothing more to "
+    "say. Never reply with only a comment like \"Good, I agree\" followed by the next "
+    "question. The same applies without a list: develop each answer before changing topic."
+)
+
+
 # Opt-in from the student's Practice screen. It overrides the level rules'
 # register on purpose: a student who asks for this finds Juno's words too hard.
 EASIER_ENGLISH = (
@@ -355,6 +369,7 @@ def dynamic_context(level: str, mode: str, scenario: dict | None, student: dict,
             "A tense or agreement mistake still gets a short gentle recast in the same "
             "turn; everything smaller goes to the end-of-call report. Follow the student's stated "
             "interests from their memory record rather than a script."
+            + FREE_TALK_DEPTH
         )
     elif mode == "structured":
         target_point = next_grammar_point(level, student)

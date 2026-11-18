@@ -248,9 +248,16 @@ From a student's feedback after a week of use:
 - **No separate thinking step in the conversation** (the "Juno is thinking…"
   pause): turns ask the model to answer directly. `JUNO_TURN_THINKING=on`
   brings thinking back without a code change. The report keeps it.
-- **A smarter wait** on "Normal": a sentence that sounds finished is sent 1.5 s
-  after the last word; one that stops on "and", "because", "I think that"…
-  still gets the full 4 s. "8 seconds" and "Until I tap" are unchanged.
+- **Wait choices** (in class): **Quick** sends a sentence that sounds finished
+  1.5 s after the last word (one that stops on "and", "because", "I think
+  that"… still gets 4 s); **4 seconds** (the default) always waits 4 s;
+  **8 seconds**; **Until I tap**. The default used to be the quick wait, and a
+  student who said something complete and then stopped to think of more was
+  answered mid-thought.
+- **Free talk develops each answer** (`FREE_TALK_DEPTH` in `tutor.py`): when a
+  student types a teacher's prompt like "ask me five questions about travel",
+  Juno reacts, adds something of its own and asks a follow-up before the next
+  question, instead of "Good, I agree" and moving on.
 - **The Anthropic library is held to 2.x** (`requirements.txt`), so a new
   major version is never installed by surprise on deploy.
 - **Timing in the server log**, one line per answer, e.g.

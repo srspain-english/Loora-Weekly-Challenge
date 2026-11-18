@@ -646,7 +646,7 @@ INDEX_HTML = """<!doctype html>
         <select id="voice-speed"><option value="slow">Slow</option><option value="normal" selected>Normal</option><option value="fast">Fast</option></select>
       </label>
       <label title="How long Juno waits when you pause">Wait
-        <select id="patience"><option value="normal">Normal</option><option value="long">8 seconds</option><option value="tap">Until I tap</option></select>
+        <select id="patience"><option value="quick">Quick</option><option value="normal" selected>4 seconds</option><option value="long">8 seconds</option><option value="tap">Until I tap</option></select>
       </label>
     </div>
     <div class="call-foot">
@@ -1134,7 +1134,7 @@ function savePrefs() {
 (function restorePrefs() {
   const saved = loadPrefs();
   if (VOICE_RATES[saved.speed]) $('voice-speed').value = saved.speed;
-  if (['normal', 'long', 'tap'].includes(saved.wait)) $('patience').value = saved.wait;
+  if (['quick', 'normal', 'long', 'tap'].includes(saved.wait)) $('patience').value = saved.wait;
   $('easier').checked = !!saved.easier;
   if (['6', '10', '0'].includes(saved.length)) $('length').value = saved.length;
   ['voice-speed', 'patience', 'easier', 'length'].forEach((id) => $(id).addEventListener('change', savePrefs));
@@ -1272,10 +1272,11 @@ function setupVoiceInput() {
   const MAX_MS = 60000;     // never listen longer than this
   // How long Juno waits after the last word before deciding the student has
   // finished. "Until I tap" never decides for them.
-  const PATIENCE = { normal: SILENCE_MS, long: 8000, tap: Infinity };
-  // On "Normal", a sentence that sounds finished goes after a short pause;
+  const PATIENCE = { quick: SILENCE_MS, normal: SILENCE_MS, long: 8000, tap: Infinity };
+  // Only on "Quick": a sentence that sounds finished goes after a short pause;
   // one that stops on "and", "because", "I think that"... still gets the
-  // full wait, so a student looking for the next word is not cut off.
+  // full wait. "Normal" is a flat 4 s, because a student who says something
+  // complete and then stops to think of more was being answered mid-thought.
   const QUICK_MS = 1500;
   const UNFINISHED = new Set(['and', 'but', 'because', 'so', 'or', 'that', 'the', 'a', 'an',
     'to', 'of', 'with', 'for', 'in', 'on', 'at', 'my', 'your', 'his', 'her', 'our', 'their',
@@ -1292,7 +1293,7 @@ function setupVoiceInput() {
   };
   const patienceMs = () => {
     const setting = $('patience').value;
-    if (setting === 'normal' && lastFinal && soundsFinished(heard)) return QUICK_MS;
+    if (setting === 'quick' && lastFinal && soundsFinished(heard)) return QUICK_MS;
     return PATIENCE[setting] || SILENCE_MS;
   };
   let carried = '';      // words from earlier pieces of the same answer
